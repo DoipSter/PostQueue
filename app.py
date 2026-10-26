@@ -8,13 +8,12 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QDateTime, QEvent, QPointF, QSize, Qt, QThread, QTime, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QIcon, QImage, QKeySequence, QPainter, QPixmap
-from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDateTimeEdit, QDialog, QDialogButtonBox,
+from PySide6.QtCore import QDate, QDateTime, QEvent, QPoint, QPointF, QSize, Qt, QThread, QTime, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPixmap
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCalendarWidget, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu,
-                               QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy, QSpinBox, QSplitter, QStyle,
-                               QSystemTrayIcon, QTabWidget, QTimeEdit, QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
-                               QWizard, QWizardPage)
+                               QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
+                               QStyle, QSystemTrayIcon, QTabWidget, QTimeEdit, QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 import engine as eng
 import hosting
@@ -24,7 +23,6 @@ from version import PRODUCT, VERSION
 
 TITLE = f'{PRODUCT} {VERSION}'
 FILE_FILTER = 'Photos and videos (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff *.gif *.mp4 *.mov *.m4v);;All files (*)'
-DATE_FORMAT = 'ddd d MMM yyyy   h:mm AP'
 CHECK_SECONDS = 30
 STATUS_COLOR = {'queued': None, 'posting': '#2b6cb0', 'posted': '#2f855a', 'failed': '#c53030', 'missed': '#b7791f'}
 TRAY_NAME = 'the menu bar' if cfg.MAC else 'the notification area'
@@ -83,6 +81,41 @@ class PreviewLabel(QLabel):
 
     def resizeEvent(self, event):
         super().resizeEvent(event); self.rescale()
+
+
+class DateTimePicker(QWidget):
+    """A date button that opens a calendar, next to a time control. Same interface as QDateTimeEdit for the parts
+    the window uses: dateTime(), setDateTime() and dateTimeChanged."""
+    dateTimeChanged = Signal(QDateTime)
+
+    def __init__(self, parent=None):
+        super().__init__(parent); row = QHBoxLayout(self); row.setContentsMargins(0, 0, 0, 0)
+        self.date = QDate.currentDate()
+        self.date_button = QPushButton(); self.date_button.setObjectName('date'); self.date_button.setToolTip('Pick the date on a calendar')
+        self.date_button.setCursor(Qt.PointingHandCursor); self.date_button.clicked.connect(self.show_calendar)
+        self.time_edit = QTimeEdit(); self.time_edit.setObjectName('time'); self.time_edit.setDisplayFormat('h:mm AP'); self.time_edit.setToolTip('The time of day')
+        self.time_edit.timeChanged.connect(lambda t: self.dateTimeChanged.emit(self.dateTime()))
+        row.addWidget(self.date_button, 1); row.addWidget(self.time_edit)
+        self.calendar = QCalendarWidget(); self.calendar.setWindowFlags(Qt.Popup); self.calendar.setGridVisible(False)
+        self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader); self.calendar.setMinimumSize(400, 320)
+        font = self.calendar.font(); font.setPointSize(font.pointSize() + 2); self.calendar.setFont(font)
+        self.calendar.clicked.connect(self.pick_date); self.calendar.activated.connect(self.pick_date)
+        self.update_text()
+
+    def update_text(self): self.date_button.setText(self.date.toString('ddd d MMM yyyy') + '   ▾')
+
+    def show_calendar(self):
+        self.calendar.setSelectedDate(self.date)
+        self.calendar.move(self.date_button.mapToGlobal(QPoint(0, self.date_button.height() + 2))); self.calendar.show(); self.calendar.setFocus()
+
+    def pick_date(self, qdate):
+        self.date = qdate; self.calendar.hide(); self.update_text(); self.dateTimeChanged.emit(self.dateTime())
+
+    def dateTime(self): return QDateTime(self.date, self.time_edit.time())
+
+    def setDateTime(self, qdt):
+        self.date = qdt.date(); self.time_edit.blockSignals(True); self.time_edit.setTime(qdt.time()); self.time_edit.blockSignals(False)
+        self.update_text(); self.dateTimeChanged.emit(self.dateTime())
 
 
 class Task(QThread):
@@ -303,48 +336,317 @@ class SettingsDialog(QDialog):
         elif not settings.hosting_ready(): self.tabs.setCurrentIndex(1)
 
 
-# --- First-run wizard: one decision per screen -----------------------------------------------------------------------
-class StepPage(QWizardPage):
-    """A wizard page that is complete when its panel says so."""
-    def __init__(self, title, subtitle, panel=None, ready=None):
-        super().__init__(); self.setTitle(title); self.setSubTitle(subtitle); self.panel, self.ready = panel, ready
-        layout = QVBoxLayout(self)
-        if panel is not None:
-            layout.addWidget(panel); panel.changed.connect(self.completeChanged)
-        layout.addStretch(1)
+# --- First-run setup: one thing per screen, large type, glass buttons ------------------------------------------------
+SETUP_STYLE = '''
+#setup { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #3a1f45, stop:0.55 #22203a, stop:1 #4a2424); }
+#setup QLabel { color: white; background: transparent; }
+#setup QLabel#title { font-size: 26pt; font-weight: 600; }
+#setup QLabel#lead { font-size: 15pt; color: rgba(255,255,255,0.88); }
+#setup QLabel#hint { font-size: 11pt; color: rgba(255,255,255,0.62); }
+#setup QLabel#status { font-size: 13pt; color: rgba(255,255,255,0.85); }
+#setup QLabel#progress { font-size: 10pt; color: rgba(255,255,255,0.55); letter-spacing: 2px; }
+#setup QLineEdit, #setup QComboBox, #setup QTimeEdit {
+  font-size: 17pt; padding: 10px 16px; border-radius: 12px; color: white;
+  background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.28); selection-background-color: #e5392b; }
+#setup QLineEdit:focus, #setup QComboBox:focus, #setup QTimeEdit:focus { border: 1px solid rgba(255,255,255,0.7); }
+#setup QComboBox QAbstractItemView { font-size: 14pt; background: #2a2440; color: white; selection-background-color: #e5392b; }
+#setup QPushButton {
+  font-size: 15pt; padding: 13px 34px; border-radius: 14px; color: white;
+  background: rgba(255,255,255,0.11); border: 1px solid rgba(255,255,255,0.38); }
+#setup QPushButton:hover { background: rgba(255,255,255,0.20); border-color: rgba(255,255,255,0.6); }
+#setup QPushButton:pressed { background: rgba(255,255,255,0.28); }
+#setup QPushButton:disabled { color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); }
+#setup QPushButton#primary { background: rgba(255,255,255,0.24); border: 1px solid rgba(255,255,255,0.7); font-weight: 600; }
+#setup QPushButton#primary:hover { background: rgba(255,255,255,0.34); }
+#setup QPushButton#choice { text-align: left; padding: 16px 24px; }
+#setup QPushButton#link { background: transparent; border: none; color: rgba(255,255,255,0.72); font-size: 12pt; padding: 8px 10px; text-decoration: underline; }
+#setup QPushButton#link:hover { color: white; }
+'''
 
-    def isComplete(self):
-        return self.ready() if self.ready else True
+
+class Step:
+    """One screen of the setup flow: a title, one instruction, optionally one control, and what Next does."""
+    def __init__(self, key, title, lead, hint='', primary='Next', build=None, ready=None, on_next=None, skip_if=None, enter=None, skippable=False):
+        self.key, self.title, self.lead, self.hint, self.primary = key, title, lead, hint, primary
+        self.build, self.ready, self.on_next, self.skip_if, self.enter, self.skippable = build, ready, on_next, skip_if, enter, skippable
+        self.page = None
 
 
-class SetupWizard(QWizard):
-    """Welcome, Instagram, hosting, schedule, done. Each screen asks for one thing; Next stays off until it is there."""
+class SetupFlow(QDialog):
+    """The first-run setup: every screen asks for exactly one thing, in large type, with one big button. Steps that
+    cannot apply are skipped; the sign-in and the hosting test move on by themselves when they succeed."""
     def __init__(self, settings, parent=None):
-        super().__init__(parent); self.settings = settings
-        self.setWindowTitle(f'Set up {PRODUCT}'); self.setWizardStyle(QWizard.ModernStyle); self.setOption(QWizard.NoBackButtonOnStartPage); self.resize(720, 640)
-        self.setButtonText(QWizard.NextButton, 'Next'); self.setButtonText(QWizard.FinishButton, 'Start using PostQueue')
-        welcome = StepPage('Welcome to PostQueue', 'Three short steps, then you only ever drop in photos and pick a time.')
-        wl = welcome.layout(); wl.insertWidget(0, intro_label(
-            '<p style="font-size: 12pt">PostQueue posts your photos and videos to Instagram at the times you choose, from your own PC, through Meta\'s official API.</p>'
-            '<p><b>1.</b> Connect your Instagram professional account.<br><b>2.</b> Connect a free media hosting account (Instagram fetches photos from a link).<br>'
-            '<b>3.</b> Choose your usual posting time.</p><p>You can change any of this later in Settings.</p>'))
-        self.instagram = InstagramPanel(settings); self.hosting = HostingPanel(settings)
-        self.addPage(welcome)
-        self.addPage(StepPage('Step 1 of 3: Instagram', 'Sign in once. Next turns on when an account is connected.', self.instagram, self.instagram.is_ready))
-        self.addPage(StepPage('Step 2 of 3: Media hosting', 'Enter the three Cloudinary values and click Test hosting.', self.hosting, self.hosting.is_ready))
-        schedule = StepPage('Step 3 of 3: When to post', 'New posts are scheduled for the next free day at this time. You can change each one.')
-        form = QFormLayout(); schedule.layout().insertLayout(0, form)
-        self.default_time = QTimeEdit(); self.default_time.setDisplayFormat('h:mm AP'); self.default_time.setTime(QTime(int(settings.get('default_hour', 9)), int(settings.get('default_minute', 0))))
-        form.addRow('Usual posting time', self.default_time)
-        self.startup = QCheckBox('Start PostQueue when I sign in, so posts go out even if I forget to open it'); self.startup.setChecked(True); form.addRow(self.startup)
-        self.addPage(schedule)
-        done = StepPage('All set', f'Drop photos or videos onto the window. Closing the window keeps PostQueue running in {TRAY_NAME}.')
-        self.addPage(done)
+        super().__init__(parent); self.settings = settings; self.setObjectName('setup'); self.setWindowTitle(f'Set up {PRODUCT}')
+        self.resize(900, 640); self.setMinimumSize(760, 560); self.setStyleSheet(SETUP_STYLE)
+        self.task = None; self.cancelled = False; self.use_token = False; self.found_accounts = []; self.history = []
+        self.steps = self.make_steps(); self.index = 0
+        outer = QVBoxLayout(self); outer.setContentsMargins(56, 28, 56, 28); outer.setSpacing(12)
+        self.progress = QLabel(''); self.progress.setObjectName('progress'); outer.addWidget(self.progress, 0, Qt.AlignHCenter)
+        outer.addStretch(1)
+        self.stack = QStackedWidget(); self.stack.setMaximumWidth(760); outer.addWidget(self.stack, 0, Qt.AlignHCenter)
+        outer.addStretch(2)
+        nav = QHBoxLayout()
+        self.back_button = QPushButton('Back'); self.back_button.setObjectName('link'); self.back_button.setCursor(Qt.PointingHandCursor); self.back_button.clicked.connect(self.back)
+        self.skip_button = QPushButton('Skip this'); self.skip_button.setObjectName('link'); self.skip_button.setCursor(Qt.PointingHandCursor); self.skip_button.clicked.connect(self.skip)
+        self.primary = QPushButton('Next'); self.primary.setObjectName('primary'); self.primary.setCursor(Qt.PointingHandCursor); self.primary.setDefault(True); self.primary.clicked.connect(self.next)
+        nav.addWidget(self.back_button); nav.addStretch(1); nav.addWidget(self.skip_button); nav.addWidget(self.primary); outer.addLayout(nav)
+        for step in self.steps: self.stack.addWidget(self.page_for(step))
+        self.show_step(0)
+
+    # --- screens --------------------------------------------------------------------------------------------------
+    def page_for(self, step):
+        page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(18); page.setMinimumWidth(640)
+        title = QLabel(step.title); title.setObjectName('title'); title.setWordWrap(True); title.setAlignment(Qt.AlignHCenter); layout.addWidget(title)
+        lead = QLabel(step.lead); lead.setObjectName('lead'); lead.setWordWrap(True); lead.setAlignment(Qt.AlignHCenter); lead.setOpenExternalLinks(True); layout.addWidget(lead)
+        if step.build:
+            control = step.build(); layout.addWidget(control, 0, Qt.AlignHCenter if control.maximumWidth() < 2000 else Qt.Alignment())
+        if step.hint:
+            hint = QLabel(step.hint); hint.setObjectName('hint'); hint.setWordWrap(True); hint.setAlignment(Qt.AlignHCenter); hint.setOpenExternalLinks(True); layout.addWidget(hint)
+        layout.addStretch(1)   # keep the title, instruction and control together at the top of the page
+        step.page = page; return page
+
+    def field(self, name, placeholder='', password=False, text=''):
+        edit = QLineEdit(text); edit.setObjectName(name); edit.setPlaceholderText(placeholder); edit.setMinimumWidth(560); edit.setAlignment(Qt.AlignHCenter)
+        if password: edit.setEchoMode(QLineEdit.Password)
+        edit.textChanged.connect(self.refresh_ready); edit.returnPressed.connect(lambda: self.primary.isEnabled() and self.next())
+        setattr(self, name, edit); return edit
+
+    def link(self, text, handler):
+        button = QPushButton(text); button.setObjectName('link'); button.setCursor(Qt.PointingHandCursor); button.clicked.connect(handler); return button
+
+    def choice(self, text, handler):
+        button = QPushButton(text); button.setObjectName('choice'); button.setCursor(Qt.PointingHandCursor); button.setMinimumWidth(560); button.clicked.connect(handler); return button
+
+    def open_url(self, url): QDesktopServices.openUrl(QUrl(url))
+
+    def status_label(self, name):
+        label = QLabel(''); label.setObjectName('status'); label.setWordWrap(True); label.setAlignment(Qt.AlignHCenter); label.setMinimumWidth(560); setattr(self, name, label); return label
+
+    def make_steps(self):
+        s = self.settings; redirect = f'http://localhost:{ig.LOGIN_PORT}/'
+        token_path = lambda: self.use_token; app_path = lambda: not self.use_token
+
+        def login_kind_control():
+            box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0); col.setSpacing(12)
+            col.addWidget(self.choice('Facebook Login\nMy Instagram account is linked to a Facebook Page', lambda: self.choose_login('facebook')))
+            col.addWidget(self.choice('Instagram Login\nJust my Instagram account', lambda: self.choose_login('instagram')))
+            col.addWidget(self.link('I already have an access token', self.choose_token), 0, Qt.AlignHCenter); return box
+
+        def open_meta_control():
+            box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0)
+            col.addWidget(self.choice('Open developers.facebook.com/apps', lambda: self.open_url('https://developers.facebook.com/apps/'))); return box
+
+        def redirect_control():
+            box = QWidget(); row = QHBoxLayout(box); row.setContentsMargins(0, 0, 0, 0)
+            edit = QLineEdit(redirect); edit.setReadOnly(True); edit.setMinimumWidth(420); edit.setAlignment(Qt.AlignHCenter); row.addWidget(edit)
+            copy = QPushButton('Copy'); copy.setCursor(Qt.PointingHandCursor); copy.clicked.connect(lambda: (QGuiApplication.clipboard().setText(redirect), copy.setText('Copied'))); row.addWidget(copy); return box
+
+        def signin_control():
+            box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0); col.setSpacing(10)
+            col.addWidget(self.status_label('signin_status'))
+            self.code_edit = QLineEdit(); self.code_edit.setPlaceholderText('Paste the code=… part of the browser\'s address here'); self.code_edit.setMinimumWidth(560); self.code_edit.hide()
+            self.code_edit.returnPressed.connect(self.use_code); col.addWidget(self.code_edit)
+            links = QHBoxLayout(); links.addStretch(1)
+            links.addWidget(self.link('The browser ended on an error page', lambda: (self.code_edit.show(), self.code_edit.setFocus())))
+            links.addWidget(self.link('Paste a token instead', self.choose_token)); links.addStretch(1); col.addLayout(links); return box
+
+        def token_control():
+            box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0); col.setSpacing(10)
+            col.addWidget(self.field('token_edit', 'Access token', password=True)); col.addWidget(self.status_label('token_status')); return box
+
+        def account_control():
+            self.account_combo = QComboBox(); self.account_combo.setMinimumWidth(560); return self.account_combo
+
+        def open_cloudinary_control():
+            box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0)
+            col.addWidget(self.choice('Open cloudinary.com and create a free account', lambda: self.open_url('https://cloudinary.com/users/register_free'))); return box
+
+        def test_control():
+            return self.status_label('hosting_status')
+
+        def time_control():
+            self.time_edit = QTimeEdit(); self.time_edit.setDisplayFormat('h:mm AP'); self.time_edit.setMinimumWidth(260); self.time_edit.setAlignment(Qt.AlignHCenter)
+            self.time_edit.setTime(QTime(int(s.get('default_hour', 9)), int(s.get('default_minute', 0)))); return self.time_edit
+
+        def startup_control():
+            box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0); col.setSpacing(12)
+            col.addWidget(self.choice('Yes, start PostQueue when I sign in', lambda: self.choose_startup(True)))
+            col.addWidget(self.choice('No, I will open it myself', lambda: self.choose_startup(False))); return box
+
+        return [
+            Step('welcome', "Let's set up PostQueue",
+                 'Three things, one at a time: your Instagram account, a place to host your photos, and your usual posting time. '
+                 'About fifteen minutes the first time, then you only ever drop in photos and pick a date.', primary='Start'),
+            Step('professional', 'Use a professional Instagram account',
+                 'In the Instagram app: Settings › Account type and tools › Switch to professional account. Business or Creator, both are free.',
+                 hint='Already professional? Just carry on.', primary='Done, next'),
+            Step('login_kind', 'How will you sign in?', 'Both work. Facebook Login needs the account linked to a Facebook Page '
+                 '(Instagram › Settings › Business tools › Connect a Facebook Page).', build=login_kind_control, primary=None),
+            Step('create_app', 'Create a Meta app', 'Sign in with your Facebook account, click Create app, choose the Business type (or the Instagram use case), '
+                 'and add the Instagram product. Keep the app in development mode.', build=open_meta_control, primary='I created it, next', skip_if=token_path),
+            Step('app_id', 'Paste the App ID', 'In the app dashboard: App settings › Basic › App ID.',
+                 build=lambda: self.field('app_id_edit', 'App ID', text=s.get('app_id', '')), ready=lambda: bool(self.app_id_edit.text().strip()),
+                 on_next=lambda: self.save_app(), skip_if=token_path),
+            Step('app_secret', 'Paste the App secret', 'App settings › Basic › App secret (click Show).',
+                 hint='With the secret, the sign-in lasts 60 days. Instagram Login always needs it; a Facebook sign-in without it lasts about two hours.',
+                 build=lambda: self.field('app_secret_edit', 'App secret', password=True, text=s.get('app_secret', '')),
+                 ready=lambda: bool(self.app_secret_edit.text().strip()) or s.get('login_kind') == 'facebook', on_next=lambda: self.save_app(),
+                 skip_if=token_path, skippable=True),
+            Step('redirect', 'Let the sign-in come back to PostQueue', 'In the app dashboard, open Facebook Login › Settings (or Instagram › Business login settings) '
+                 'and add this address to Valid OAuth Redirect URIs:', build=redirect_control, primary='Added, next', skip_if=token_path),
+            Step('roles', 'Add yourself as a tester', 'App roles › Roles: add your own account as an administrator or tester. For Instagram Login, also add the '
+                 'Instagram account under Instagram testers and accept the invitation in the Instagram app (Settings › Apps and websites › Tester invites).',
+                 primary='Done, next', skip_if=token_path),
+            Step('signin', 'Sign in', 'The browser opens Meta\'s sign-in. Approve it there, then come back here. This screen moves on by itself.',
+                 build=signin_control, primary='Sign in in the browser', on_next=self.sign_in, skip_if=token_path, enter=lambda: self.signin_status.setText('')),
+            Step('token', 'Paste the access token', 'A Meta Business Suite system-user token (never expires), or a Graph API Explorer token with '
+                 'instagram_basic and instagram_content_publish.', build=token_control, primary='Check token', on_next=self.check_token,
+                 ready=lambda: bool(self.token_edit.text().strip()), skip_if=app_path),
+            Step('account', 'Which account?', 'Several Instagram accounts were found. Choose the one to post as.', build=account_control,
+                 on_next=lambda: self.pick_account(), skip_if=lambda: len(self.found_accounts) <= 1, enter=self.fill_accounts),
+            Step('cloud_signup', 'Create a free Cloudinary account', 'Instagram fetches each photo from a link, so PostQueue needs somewhere to host it for a moment. '
+                 'Cloudinary\'s free plan is far more than a personal queue needs.', build=open_cloudinary_control, primary='I have an account, next'),
+            Step('cloud_name', 'Paste the Cloud name', 'Cloudinary console › Settings › API Keys (or the dashboard\'s Product environment credentials).',
+                 build=lambda: self.field('cloud_edit', 'Cloud name', text=s.get('cloudinary_cloud', '')), ready=lambda: bool(self.cloud_edit.text().strip()), on_next=lambda: self.save_hosting()),
+            Step('api_key', 'Paste the API key', 'From the same Cloudinary page.',
+                 build=lambda: self.field('ckey_edit', 'API key', text=s.get('cloudinary_api_key', '')), ready=lambda: bool(self.ckey_edit.text().strip()), on_next=lambda: self.save_hosting()),
+            Step('api_secret', 'Paste the API secret', 'From the same Cloudinary page (click to reveal it).',
+                 build=lambda: self.field('csecret_edit', 'API secret', password=True, text=s.get('cloudinary_api_secret', '')), ready=lambda: bool(self.csecret_edit.text().strip()), on_next=lambda: self.save_hosting()),
+            Step('test_hosting', 'Test the hosting', 'PostQueue uploads a tiny test image and removes it again. This screen moves on when it works.',
+                 build=test_control, primary='Test hosting', on_next=self.test_hosting, skippable=True, enter=lambda: self.hosting_status.setText('')),
+            Step('time', 'When do you usually post?', 'Each photo you add is scheduled for the next free day at this time. You can change any of them.',
+                 build=time_control, on_next=lambda: self.save_time()),
+            Step('startup', 'Start PostQueue when you sign in?', 'Posts only go out while PostQueue is running, so this is the safe choice.', build=startup_control, primary=None),
+            Step('done', 'All set', f'Drop photos or videos onto the window and pick a date for each. Closing the window keeps PostQueue running in {TRAY_NAME}.',
+                 primary='Start using PostQueue'),
+        ]
+
+    # --- navigation -----------------------------------------------------------------------------------------------
+    def step(self): return self.steps[self.index]
+
+    def visible_indexes(self): return [i for i, st in enumerate(self.steps) if not (st.skip_if and st.skip_if())]
+
+    def show_step(self, index):
+        self.index = index; step = self.steps[index]; self.stack.setCurrentIndex(index)
+        if step.enter: step.enter()
+        middle = [i for i in self.visible_indexes() if 0 < i < len(self.steps) - 1]   # welcome and done are not steps
+        self.progress.setText(f'STEP {middle.index(index) + 1} OF {len(middle)}' if index in middle else '')
+        self.primary.setVisible(step.primary is not None); self.primary.setText(step.primary or '')
+        self.skip_button.setVisible(step.skippable); self.back_button.setVisible(bool(self.history))
+        self.refresh_ready()
+        if step.primary: self.primary.setFocus()
+        for child in step.page.findChildren(QLineEdit):
+            if child.isVisible() and not child.isReadOnly(): child.setFocus(); break
+
+    def refresh_ready(self, *_):
+        step = self.step(); self.primary.setEnabled(self.task is None and (step.ready() if step.ready else True))
+
+    def next(self):
+        step = self.step()
+        if step.on_next and step.on_next() is False: return   # the step is doing something first and advances itself
+        self.advance()
+
+    def advance(self):
+        later = [i for i in self.visible_indexes() if i > self.index]
+        if not later: return self.accept()
+        self.history.append(self.index); self.show_step(later[0])
+
+    def goto(self, key):
+        self.history.append(self.index); self.show_step(next(i for i, st in enumerate(self.steps) if st.key == key))
+
+    def skip(self):
+        if self.step().key == 'app_secret': self.app_secret_edit.clear(); self.save_app()
+        self.advance()
+
+    def back(self):
+        if self.history: self.show_step(self.history.pop())
+
+    # --- choices and actions --------------------------------------------------------------------------------------
+    def choose_login(self, kind): self.use_token = False; self.settings['login_kind'] = kind; self.settings.save(); self.advance()
+    def choose_token(self): self.use_token = True; self.goto('token')
+    def choose_startup(self, on): self.settings['start_with_windows'] = bool(on); self.settings.save(); self.advance()
+
+    def save_app(self):
+        self.settings['app_id'] = self.app_id_edit.text().strip(); self.settings['app_secret'] = self.app_secret_edit.text().strip(); self.settings.save()
+
+    def save_hosting(self):
+        self.settings['cloudinary_cloud'] = self.cloud_edit.text().strip(); self.settings['cloudinary_api_key'] = self.ckey_edit.text().strip()
+        self.settings['cloudinary_api_secret'] = self.csecret_edit.text().strip(); self.settings.save()
+
+    def save_time(self):
+        t = self.time_edit.time(); self.settings['default_hour'], self.settings['default_minute'] = t.hour(), t.minute(); self.settings.save()
+
+    def run_task(self, fn, on_done, label, waiting):
+        if self.task is not None: return
+        self.cancelled = False; label.setText(waiting); self.refresh_ready()
+        self.task = Task(fn)
+        def finish(): self.task = None; self.refresh_ready()
+        def ok(result): finish(); on_done(result)
+        def bad(message): finish(); label.setText(message)
+        self.task.done.connect(ok); self.task.failed.connect(bad); self.task.start()
+
+    def sign_in(self):
+        kind, app_id, secret, version = self.settings.get('login_kind', 'facebook'), self.settings.get('app_id', ''), self.settings.get('app_secret', ''), self.settings.get('api_version')
+        self.run_task(lambda: ig.run_login(kind, app_id, secret, version, cancelled=lambda: self.cancelled), self.token_received, self.signin_status,
+                      'Waiting for the browser… approve the sign-in there, then come back here.')
+        return False
+
+    def use_code(self):
+        code = self.code_edit.text().strip()
+        if not code: return
+        kind, app_id, secret, version = self.settings.get('login_kind', 'facebook'), self.settings.get('app_id', ''), self.settings.get('app_secret', ''), self.settings.get('api_version')
+        redirect = f'http://localhost:{ig.LOGIN_PORT}/'
+        def exchange():
+            token, expires = ig.exchange_code(kind, app_id, secret, redirect, code, version)
+            if secret:
+                with contextlib.suppress(ig.InstagramError): token, expires = ig.long_lived(kind, app_id, secret, token, version)
+            return token, expires, redirect
+        self.run_task(exchange, self.token_received, self.signin_status, 'Exchanging the code…')
+
+    def token_received(self, result):
+        token, expires, _ = result
+        self.settings['access_token'] = token
+        self.settings['token_expires'] = eng.fmt_when(eng.now_local() + dt.timedelta(seconds=int(expires))) if expires else ''
+        self.settings.save(); self.find_accounts(token, self.signin_status)
+
+    def check_token(self):
+        token = self.token_edit.text().strip()
+        self.settings['access_token'] = token; self.settings['token_expires'] = ''; self.settings.save(); self.find_accounts(token, self.token_status)
+        return False
+
+    def find_accounts(self, token, label):
+        version = self.settings.get('api_version')
+        self.run_task(lambda: ig.accounts_for_token(token, version), self.accounts_found, label, 'Looking up the Instagram account…')
+
+    def accounts_found(self, found):
+        self.found_accounts = found; self.apply_account(found[0])
+        label = self.token_status if self.use_token else self.signin_status
+        label.setText(f'Connected as @{found[0]["username"]}.'); QTimer.singleShot(700, self.advance)
+
+    def fill_accounts(self):
+        self.account_combo.clear()
+        for acc in self.found_accounts: self.account_combo.addItem(f'@{acc["username"] or acc["id"]}' + (f'  (via {acc["via"]})' if acc.get('via') else ''), acc)
+
+    def pick_account(self):
+        acc = self.account_combo.currentData()
+        if acc: self.apply_account(acc)
+
+    def apply_account(self, acc):
+        self.settings['ig_user_id'] = acc['id']; self.settings['ig_username'] = acc.get('username', ''); self.settings['api_host'] = acc.get('host') or ig.FB_HOST
+        if self.settings['api_host'] == ig.IG_HOST: self.settings['login_kind'] = 'instagram'
+        self.settings.save()
+
+    def test_hosting(self):
+        try: provider = hosting.make_provider(self.settings) or hosting.Cloudinary('', '', '')
+        except hosting.HostingError as exc: self.hosting_status.setText(str(exc)); return False
+        self.run_task(provider.test, lambda url: (self.hosting_status.setText('Hosting works.'), QTimer.singleShot(700, self.advance)), self.hosting_status, 'Uploading a test image…')
+        return False
 
     def accept(self):
-        t = self.default_time.time(); self.settings['default_hour'], self.settings['default_minute'] = t.hour(), t.minute()
-        self.settings['start_with_windows'] = bool(self.startup.isChecked()); self.settings['setup_done'] = True; self.settings.save()
-        super().accept()
+        self.settings['setup_done'] = True; self.settings.save(); super().accept()
+
+
+SetupWizard = SetupFlow   # the first version's name
 
 
 class MainWindow(QMainWindow):
@@ -405,14 +707,16 @@ class MainWindow(QMainWindow):
         dl.addWidget(self.preview, 1)
         self.name_label = QLabel(''); self.name_label.setStyleSheet('font-weight: 600;'); self.name_label.setWordWrap(True); dl.addWidget(self.name_label)
         form = QFormLayout(); form.setLabelAlignment(Qt.AlignRight); dl.addLayout(form)
-        when_row = QHBoxLayout()
-        self.when_edit = QDateTimeEdit(); self.when_edit.setObjectName('when'); self.when_edit.setAccessibleName('Scheduled date and time')
-        self.when_edit.setCalendarPopup(True); self.when_edit.setDisplayFormat(DATE_FORMAT); self.when_edit.dateTimeChanged.connect(self.mark_dirty)
-        when_row.addWidget(self.when_edit, 1)
-        for text, delta in (('+1 hour', dt.timedelta(hours=1)), ('+1 day', dt.timedelta(days=1))):
-            b = QPushButton(text); b.setToolTip(f'Move the scheduled time by {text[1:]}'); b.clicked.connect(lambda _=False, d=delta: self.shift_when(d)); when_row.addWidget(b)
-        slot = QPushButton('Next slot'); slot.setToolTip('The next free default posting time (set in Settings > General)'); slot.clicked.connect(self.use_next_slot); when_row.addWidget(slot)
-        form.addRow('Post on', when_row)
+        when_box = QVBoxLayout(); when_box.setSpacing(4)
+        self.when_edit = DateTimePicker(); self.when_edit.setObjectName('when'); self.when_edit.setAccessibleName('Scheduled date and time')
+        self.when_edit.dateTimeChanged.connect(self.mark_dirty)
+        when_box.addWidget(self.when_edit)
+        quick = QHBoxLayout(); quick.setSpacing(6)
+        for text, delta in (('+1 hour', dt.timedelta(hours=1)), ('+1 day', dt.timedelta(days=1)), ('+1 week', dt.timedelta(days=7))):
+            b = QPushButton(text); b.setToolTip(f'Move the scheduled time by {text[1:]}'); b.clicked.connect(lambda _=False, d=delta: self.shift_when(d)); quick.addWidget(b)
+        slot = QPushButton('Next free slot'); slot.setToolTip('The next free default posting time (set in Settings > General)'); slot.clicked.connect(self.use_next_slot); quick.addWidget(slot)
+        quick.addStretch(1); when_box.addLayout(quick)
+        form.addRow('Post on', when_box)
         self.fit_combo = QComboBox(); self.fit_combo.setObjectName('fit'); self.fit_combo.addItem('Crop to fit Instagram', 'crop'); self.fit_combo.addItem('Add white borders', 'pad')
         self.fit_combo.setToolTip('Instagram accepts photos between 4:5 (portrait) and 1.91:1 (landscape). Photos outside that range are cropped or padded.')
         self.fit_combo.currentIndexChanged.connect(self.mark_dirty); form.addRow('If the shape is off', self.fit_combo)
@@ -660,7 +964,7 @@ class MainWindow(QMainWindow):
     def open_setup(self):
         """The first-run wizard (one decision per screen); the settings dialog once set-up is complete."""
         if self.settings.ready(): return self.open_settings()
-        wizard = SetupWizard(self.settings, self); wizard.exec()
+        flow = SetupFlow(self.settings, self); flow.exec()
         self.settings.save(); self.refresh(); self.apply_startup_setting()
 
     def open_settings(self):

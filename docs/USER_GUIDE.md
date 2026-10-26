@@ -12,85 +12,89 @@ Closing the window keeps PostQueue running in the notification area on Windows (
 
 ## 2. One-time setup
 
-The first time PostQueue opens, it walks you through setup **one step per screen**: Instagram account, media hosting, posting time. Next only lights up when the step is done, and everything can be changed later in **Settings** (the gear in the toolbar).
+The first time PostQueue opens, it walks you through setup **one screen at a time**. Each screen tells you one thing to do and has one button. Do the thing, press the button, move on. About fifteen minutes the first time. Everything can be changed later in **Settings** (the gear in the toolbar).
 
-![The welcome screen](screenshots/guide-wizard-welcome.png)
+![Welcome](screenshots/guide-setup-welcome.png)
 
-**What to do:** read the three steps, then click **Next** (1).
+**Press Start** (1).
 
 If you close the steps early, the yellow bar at the top of the window says what is still missing, and its button (1) takes you back to them:
 
 ![The window with the setup bar](screenshots/guide-banner.png)
 
-PostQueue uses Meta's official Instagram API, which has three requirements.
+### 2.1 Your Instagram account
 
-### 2.1 An Instagram professional account
+![Use a professional account](screenshots/guide-setup-professional.png)
 
-Instagram only allows API posting for **Business** or **Creator** accounts. In the Instagram app: Settings > Account type and tools > Switch to professional account. It is free and can be switched back.
+Instagram only allows posting through its API for **Business** or **Creator** accounts. In the Instagram app: Settings › Account type and tools › Switch to professional account. It is free and can be switched back. Then press **Done, next** (1).
 
-For the simplest sign-in (**Facebook Login**), also link the account to a Facebook Page: Instagram > Settings > Business tools and controls > Connect a Facebook Page (create a Page if you have none). If you prefer not to involve Facebook, use **Instagram Login** (section 2.3).
+![How will you sign in?](screenshots/guide-setup-login.png)
 
-### 2.2 A Meta app (for the sign-in)
+Pick one:
 
-This is a registration that gives PostQueue permission to post as you. It takes about ten minutes and is free.
+1. **Facebook Login** if your Instagram account is linked to a Facebook Page (Instagram › Settings › Business tools and controls › Connect a Facebook Page; create a Page if you have none).
+2. **Instagram Login** if you want to keep Facebook out of it.
+3. **I already have an access token** skips the Meta app screens: for a Meta Business Suite system-user token (never expires) or a Graph API Explorer token with `instagram_basic` and `instagram_content_publish`.
 
-1. Go to <https://developers.facebook.com/apps/> and sign in with the Facebook account that manages your Page (or any Facebook account, for Instagram Login). Create an app: choose the **Business** type (or, when offered, the "Instagram" use case).
-2. In the app's dashboard, add the **Instagram** product (Instagram Graph API / Instagram API).
-3. Under **App settings > Basic**, note the **App ID** and **App secret**.
-4. Under **Facebook Login > Settings** (or Instagram > API setup with Instagram login > Business login settings), add this to **Valid OAuth Redirect URIs**:
-   `http://localhost:48215/`
-5. Keep the app in **Development mode**. In development mode the app may be used by the people listed under **App roles**: add yourself as an administrator or tester, and for Instagram Login add the Instagram account under **Instagram testers** (then accept the invitation in the Instagram app: Settings > Apps and websites > Tester invites). Development mode is enough for your own accounts; publishing the app with App Review is only needed if other people will use it.
+### 2.2 The Meta app (five short screens)
 
-### 2.3 Sign in (step 1 of 3)
+A Meta app is a free registration that lets PostQueue post as you. The screens take you through it one value at a time.
 
-![Step 1: Instagram](screenshots/guide-wizard-instagram.png)
+![Create a Meta app](screenshots/guide-setup-create-app.png)
 
-**What to do, in order:**
+Press **Open developers.facebook.com/apps** (1), sign in with your Facebook account, click **Create app**, choose the **Business** type (or the "Instagram" use case when offered) and add the **Instagram** product. Keep the app in development mode. Then press **I created it, next** (2).
 
-1. Choose the sign-in type: **Facebook Login** (account linked to a Page) or **Instagram Login** (account only).
-2. Enter the **Meta app ID** from the app dashboard (section 2.2).
-3. Enter the **Meta app secret**. It lets the sign-in last 60 days; without it, a Facebook sign-in lasts about two hours. Instagram Login always needs it.
-4. Click **Sign in in the browser**. Approve the request in the browser, then come back to PostQueue.
-5. **Instead of 1 to 4**, you can paste an access token here and click **Check token**: a Meta Business Suite **system user** token (which never expires) or a token from the Graph API Explorer with the `instagram_basic` and `instagram_content_publish` permissions.
-6. The account appears under **Post as**. If several Pages have Instagram accounts, choose the one to post to.
-7. **Next** lights up. Click it.
+![Paste the App ID](screenshots/guide-setup-app-id.png)
 
-If the browser ends on a page that cannot be displayed, copy the `code=…` part of its address into the box under the sign-in button and click **Use code**.
+In the app dashboard: **App settings › Basic**. Copy the **App ID** into the box (1) and press **Next** (2). Next only lights up once something is in the box.
 
-The same panel is in Settings > **Instagram** afterwards, with a **Disconnect** button.
+![Paste the App secret](screenshots/guide-setup-app-secret.png)
 
-When a sign-in is about to expire, the yellow bar tells you a week ahead. Instagram Login sign-ins are renewed automatically while PostQueue runs.
+Same page: **App secret** (click Show). Paste it (1) and press **Next** (2). With the secret, the sign-in lasts 60 days and renews. For Facebook Login you may **Skip this** (3), but the sign-in then lasts about two hours. Instagram Login always needs it.
 
-### 2.4 Media hosting (step 2 of 3)
+![Let the sign-in come back](screenshots/guide-setup-redirect.png)
 
-Instagram's API does not accept photo uploads: it **fetches each photo from a public link**. PostQueue uploads each file to your own hosting account just before posting and deletes it afterwards.
+In the dashboard open **Facebook Login › Settings** (or **Instagram › Business login settings**) and add the address shown (1) to **Valid OAuth Redirect URIs**. **Copy** (2) puts it on the clipboard. Then press **Added, next** (3).
 
-First, get the three values:
+![Add yourself as a tester](screenshots/guide-setup-roles.png)
 
-- Create a free account at <https://cloudinary.com/users/register_free> (the free plan is far more than a personal queue needs).
-- In the Cloudinary console, open **Settings > API Keys** (or the dashboard's "Product environment credentials") and copy the **Cloud name**, **API key** and **API secret**.
+**App roles › Roles**: add your own account as an administrator or tester. For Instagram Login, also add the Instagram account under **Instagram testers**, then accept the invitation in the Instagram app (Settings › Apps and websites › Tester invites). Press **Done, next** (1). Development mode is enough for your own accounts; App Review is only needed if other people will use your app.
 
-![Step 2: Media hosting](screenshots/guide-wizard-hosting.png)
+### 2.3 Sign in
 
-**What to do, in order:**
+![Sign in](screenshots/guide-setup-sign-in.png)
 
-1. Paste the **Cloud name**.
-2. Paste the **API key**.
-3. Paste the **API secret**.
-4. Click **Test hosting**. It uploads a tiny test image and removes it again, and says "Hosting works".
-5. Click **Next**.
+Press **Sign in in the browser** (1). Approve Meta's request in the browser, then come back: the screen says "Connected as @yourname" and moves on by itself. If several Pages have Instagram accounts, one extra screen asks which one to post as.
 
-### 2.5 When to post (step 3 of 3)
+If the browser ends on an error page, press **The browser ended on an error page**, paste the `code=…` part of its address, and press Enter. **Paste a token instead** (2) switches to the token screen.
 
-![Step 3: When to post](screenshots/guide-wizard-schedule.png)
+### 2.4 Media hosting (four short screens)
 
-**What to do:**
+![Create a Cloudinary account](screenshots/guide-setup-cloudinary.png)
 
-1. Pick your **usual posting time**. Each photo you add later is scheduled for the next free day at this time (you can change any of them).
-2. Leave **Start PostQueue when I sign in** ticked, so posts go out even if you forget to open it.
-3. Click **Next**, then **Start using PostQueue** on the last screen.
+Instagram fetches each photo **from a link**, so PostQueue needs somewhere to host it for a moment. Press **Open cloudinary.com** (1) and create a free account (the free plan is far more than a personal queue needs). Then press **I have an account, next** (2).
 
-![All set](screenshots/guide-wizard-done.png)
+![Paste the Cloud name](screenshots/guide-setup-cloud-name.png)
+
+In the Cloudinary console open **Settings › API Keys** (or the dashboard's "Product environment credentials"). The next three screens each take one value: **Cloud name** (1, then Next 2), **API key**, **API secret**.
+
+![Test the hosting](screenshots/guide-setup-test-hosting.png)
+
+Press **Test hosting** (1). PostQueue uploads a tiny test image, removes it, says "Hosting works", and moves on. If it fails, the screen says why; **Skip this** (2) lets you carry on and test later in Settings.
+
+### 2.5 When to post
+
+![When do you usually post?](screenshots/guide-setup-time.png)
+
+Pick your **usual posting time** (1) and press **Next** (2). Each photo you add later is scheduled for the next free day at this time; you can change any of them.
+
+![Start when you sign in?](screenshots/guide-setup-startup.png)
+
+Press **Yes, start PostQueue when I sign in** (1). Posts only go out while PostQueue is running, so this is the safe choice; **No** (2) means you open it yourself.
+
+![All set](screenshots/guide-setup-done.png)
+
+Press **Start using PostQueue** (1).
 
 ### 2.6 Settings > General (later changes)
 
@@ -106,7 +110,9 @@ First, get the three values:
 **What to do:**
 
 1. **Add photos or videos** (this button, Ctrl+O, or drag files onto the window). Photos: JPG, PNG, WEBP, BMP, TIFF, GIF. Videos: MP4 or MOV (H.264 with AAC audio works best), up to 1 GB. Each file appears in the list with the **next free posting time** already filled in.
-2. With a file selected, pick the **date and time**: click the arrow for a calendar, or use **+1 hour**, **+1 day** and **Next slot**.
+2. With a file selected, pick the **date and time**: click the date to open a calendar and pick a day, set the time next to it, or use **+1 hour**, **+1 day**, **+1 week** and **Next free slot** underneath.
+
+   ![The calendar](screenshots/guide-calendar.png)
 3. Write the **caption**, with #hashtags and @mentions. The counter under it warns when the caption is too long or has more than 30 hashtags.
 4. Click **Save changes** (Ctrl+S). The row's **Scheduled for** column updates.
 5. **Post now** publishes the selected post immediately instead of waiting. **Remove** takes it out of the queue (posts already on Instagram stay there).

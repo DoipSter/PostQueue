@@ -204,32 +204,72 @@ def test_test_hosting_reports(window, qapp, monkeypatch):
     assert wait_until(lambda: 'Hosting works' in dialog.hosting.status.text())
 
 
-def test_wizard_asks_one_thing_per_screen(window, qapp, monkeypatch):
+def fresh_settings(window):
     s = window.settings
-    for key in ('access_token', 'ig_user_id', 'cloudinary_cloud'): s[key] = ''
-    s['setup_done'] = False; assert window.needs_setup()
+    for key in ('access_token', 'ig_user_id', 'cloudinary_cloud', 'app_id', 'app_secret'): s[key] = ''
+    s['setup_done'] = False; s['start_with_windows'] = None; return s
+
+
+def test_setup_flow_one_thing_per_screen(window, qapp, monkeypatch):
+    s = fresh_settings(window); assert window.needs_setup()
+    monkeypatch.setattr(ui.ig, 'run_login', lambda kind, app_id, secret, version, cancelled: ('LONG', 5184000, 'http://localhost:48215/'))
     monkeypatch.setattr(ui.ig, 'accounts_for_token', lambda token, version: [{'id': '9', 'username': 'wiz', 'host': ui.ig.FB_HOST, 'via': 'Page'}])
-    wizard = ui.SetupWizard(s, window); wizard.show(); qapp.processEvents()
-    titles = [wizard.page(i).title() for i in wizard.pageIds()]
-    assert titles[0] == 'Welcome to PostQueue' and titles[1].startswith('Step 1 of 3') and titles[-1] == 'All set' and len(titles) == 5
-    wizard.next(); assert wizard.currentPage().title().startswith('Step 1') and not wizard.currentPage().isComplete()   # Next is off until connected
-    wizard.instagram.token_edit.setText('TOK'); wizard.instagram.findChild(ui.QPushButton, 'check_token').click()
-    assert wait_until(lambda: wizard.instagram.task is None and s.connected()) and wizard.currentPage().isComplete()
-    wizard.next(); assert wizard.currentPage().title().startswith('Step 2') and not wizard.currentPage().isComplete()
-    wizard.hosting.cloud.setText('c'); wizard.hosting.ckey.setText('k'); wizard.hosting.csecret.setText('s'); wizard.hosting.save()
-    assert wizard.currentPage().isComplete()
-    wizard.next(); assert wizard.currentPage().title().startswith('Step 3')
-    wizard.default_time.setTime(ui.QTime(18, 30)); wizard.startup.setChecked(True)
-    wizard.next(); assert wizard.currentPage().title() == 'All set'
-    wizard.accept()
+    class Good:
+        name = 'Cloudinary'
+        def test(self): return 'https://ok'
+    monkeypatch.setattr(ui.hosting, 'make_provider', lambda st: Good())
+    flow = ui.SetupFlow(s, window); flow.show(); qapp.processEvents()
+    keys = []
+    def at(key):
+        keys.append(flow.step().key); assert flow.step().key == key, f'expected {key}, at {flow.step().key}'
+    at('welcome'); assert flow.primary.text() == 'Start' and not flow.back_button.isVisible() and flow.progress.text() == ''
+    flow.next(); at('professional'); assert flow.progress.text().startswith('STEP 1 OF')
+    flow.next(); at('login_kind'); assert not flow.primary.isVisible()   # the two big choices are the only buttons
+    flow.choose_login('facebook'); at('create_app'); assert s['login_kind'] == 'facebook'
+    flow.next(); at('app_id'); assert not flow.primary.isEnabled()        # one field, Next off until it has a value
+    flow.app_id_edit.setText(' 123 '); assert flow.primary.isEnabled(); flow.next(); at('app_secret'); assert s['app_id'] == '123'
+    assert flow.primary.isEnabled() and flow.skip_button.isVisible()        # optional for Facebook Login
+    flow.app_secret_edit.setText('sec'); flow.next(); at('redirect'); assert s['app_secret'] == 'sec'
+    flow.next(); at('roles'); flow.next(); at('signin'); assert flow.primary.text() == 'Sign in in the browser'
+    flow.next()                                                               # starts the sign-in; the screen moves on by itself
+    assert wait_until(lambda: flow.step().key == 'cloud_signup') and s.connected() and s['ig_username'] == 'wiz'   # one account: the chooser is skipped
+    flow.next(); at('cloud_name'); flow.cloud_edit.setText('c'); flow.next(); at('api_key'); flow.ckey_edit.setText('k'); flow.next()
+    at('api_secret'); flow.csecret_edit.setText('sek'); flow.next(); at('test_hosting'); assert s.hosting_ready()
+    flow.next(); assert wait_until(lambda: flow.step().key == 'time')         # the test passed, so it moved on
+    flow.time_edit.setTime(ui.QTime(18, 30)); flow.next(); at('startup'); assert not flow.primary.isVisible()
+    flow.choose_startup(True); at('done'); assert flow.primary.text() == 'Start using PostQueue'
+    flow.back(); at('startup'); flow.choose_startup(True); at('done')     # Back works
+    flow.next()                                                               # finishes
     again = cfg.Settings(s.path)
     assert again['setup_done'] and again['default_hour'] == 18 and again['default_minute'] == 30 and again['start_with_windows'] is True and again.ready()
     window.refresh(); assert not window.needs_setup() and not window.banner.isVisible()
 
 
+def test_setup_flow_token_shortcut_and_account_choice(window, qapp, monkeypatch):
+    s = fresh_settings(window)
+    monkeypatch.setattr(ui.ig, 'accounts_for_token', lambda token, version: [{'id': '1', 'username': 'one', 'host': ui.ig.FB_HOST, 'via': 'A'}, {'id': '2', 'username': 'two', 'host': ui.ig.FB_HOST, 'via': 'B'}])
+    flow = ui.SetupFlow(s, window); flow.show(); qapp.processEvents()
+    flow.next(); flow.next(); flow.choose_token(); assert flow.step().key == 'token' and not flow.primary.isEnabled()
+    flow.token_edit.setText('TOK'); assert flow.primary.isEnabled(); flow.next()
+    assert wait_until(lambda: flow.step().key == 'account') and flow.account_combo.count() == 2
+    flow.account_combo.setCurrentIndex(1); flow.next(); assert s['ig_username'] == 'two' and flow.step().key == 'cloud_signup'
+    total = int(flow.progress.text().split()[-1]); assert total < len(flow.steps)   # the app-creation screens were skipped
+    monkeypatch.setattr(ui.ig, 'accounts_for_token', lambda token, version: (_ for _ in ()).throw(ui.ig.InstagramError('Invalid OAuth access token', code=190)))
+    flow.goto('token'); flow.token_edit.setText('BAD'); flow.next()
+    assert wait_until(lambda: flow.task is None and 'expired' in flow.token_status.text()) and flow.step().key == 'token'
+
+
+def test_date_picker_has_calendar_and_time(window, tmp_path):
+    window.add_paths([photo(tmp_path)]); picker = window.when_edit
+    assert '▾' in picker.date_button.text() and picker.time_edit.time().hour() == 9
+    picker.pick_date(ui.QDate(2027, 3, 4)); assert window.dirty and picker.dateTime().toPython().month == 3
+    picker.time_edit.setTime(ui.QTime(17, 45)); assert picker.dateTime().toPython().hour == 17
+    window.save_button.click(); assert window.current.when_dt().year == 2027 and window.current.when_dt().minute == 45
+
+
 def test_banner_button_opens_wizard_until_ready(window, monkeypatch):
     opened = []
-    monkeypatch.setattr(ui.SetupWizard, 'exec', lambda self: opened.append('wizard'))
+    monkeypatch.setattr(ui.SetupFlow, 'exec', lambda self: opened.append('wizard'))
     monkeypatch.setattr(ui.SettingsDialog, 'exec', lambda self: opened.append('settings'))
     window.settings['access_token'] = ''; window.refresh()
     assert window.banner.isVisible() and window.banner_button.text() == 'Finish setup'

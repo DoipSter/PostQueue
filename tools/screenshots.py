@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from PIL import Image, ImageDraw
 from PySide6.QtCore import QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import QApplication, QToolBar, QWizard
+from PySide6.QtWidgets import QApplication, QToolBar
 
 import app as ui
 import engine as eng
@@ -73,17 +73,29 @@ def main(out):
     dialog = ui.SettingsDialog(settings, window); dialog.setAttribute(Qt.WA_DontShowOnScreen, True); dialog.show(); app.processEvents()
     for i, name in enumerate(('settings-instagram', 'settings-hosting', 'settings-general')):
         dialog.tabs.setCurrentIndex(i); app.processEvents(); dialog.grab().save(str(out / f'{name}.png'))
-    fresh = cfg.Settings(data / 'fresh.json'); wizard = ui.SetupWizard(fresh, window); wizard.setAttribute(Qt.WA_DontShowOnScreen, True); wizard.show(); app.processEvents()
-    nxt = wizard.button(QWizard.NextButton); ig, host = wizard.instagram, wizard.hosting
-    guide = {'wizard-welcome': [(nxt, 1)],
-             'wizard-instagram': [(ig.kind, 1), (ig.app_id, 2), (ig.app_secret, 3), (ig.signin_button, 4), (ig.token_edit, 5), (ig.accounts, 6), (nxt, 7)],
-             'wizard-hosting': [(host.cloud, 1), (host.ckey, 2), (host.csecret, 3), (host.findChild(ui.QPushButton, 'test_hosting'), 4), (nxt, 5)],
-             'wizard-schedule': [(wizard.default_time, 1), (wizard.startup, 2), (nxt, 3)],
-             'wizard-done': [(wizard.button(QWizard.FinishButton), 1)]}
-    for i, name in enumerate(('wizard-welcome', 'wizard-instagram', 'wizard-hosting', 'wizard-schedule', 'wizard-done')):
-        app.processEvents(); shot = wizard.grab(); shot.save(str(out / f'{name}.png'))
-        annotate(wizard, shot, guide[name], out / f'guide-{name}.png')
-        if i < 4: wizard.currentPage().ready = None; wizard.next()
+    # The calendar that the date button opens
+    window.when_edit.calendar.setSelectedDate(window.when_edit.date); window.when_edit.calendar.resize(420, 340); window.when_edit.calendar.grab().save(str(out / 'guide-calendar.png'))
+    # The setup flow, one screen at a time
+    fresh = cfg.Settings(data / 'fresh.json'); flow = ui.SetupFlow(fresh, window); flow.setAttribute(Qt.WA_DontShowOnScreen, True); flow.show(); app.processEvents()
+    def shoot(name, items=()):
+        app.processEvents(); shot = flow.grab(); shot.save(str(out / f'setup-{name}.png')); annotate(flow, shot, items, out / f'guide-setup-{name}.png')
+    shoot('welcome', [(flow.primary, 1)]); flow.next()
+    shoot('professional', [(flow.primary, 1)]); flow.next()
+    shoot('login', [(flow.step().page.findChildren(ui.QPushButton)[0], 1), (flow.step().page.findChildren(ui.QPushButton)[1], 2), (flow.step().page.findChildren(ui.QPushButton)[2], 3)])
+    flow.choose_login('facebook'); shoot('create-app', [(flow.step().page.findChildren(ui.QPushButton)[0], 1), (flow.primary, 2)]); flow.next()
+    flow.app_id_edit.setText('1234567890'); shoot('app-id', [(flow.app_id_edit, 1), (flow.primary, 2)]); flow.next()
+    flow.app_secret_edit.setText('secret'); shoot('app-secret', [(flow.app_secret_edit, 1), (flow.primary, 2), (flow.skip_button, 3)]); flow.next()
+    shoot('redirect', [(flow.step().page.findChildren(ui.QLineEdit)[0], 1), (flow.step().page.findChildren(ui.QPushButton)[0], 2), (flow.primary, 3)]); flow.next()
+    shoot('roles', [(flow.primary, 1)]); flow.next()
+    shoot('sign-in', [(flow.primary, 1), (flow.step().page.findChildren(ui.QPushButton)[1], 2)])
+    fresh.update({'access_token': 'x', 'ig_user_id': '1', 'ig_username': 'studio.north'}); flow.found_accounts = [{'id': '1', 'username': 'studio.north'}]; flow.advance()
+    shoot('cloudinary', [(flow.step().page.findChildren(ui.QPushButton)[0], 1), (flow.primary, 2)]); flow.next()
+    flow.cloud_edit.setText('my-cloud'); shoot('cloud-name', [(flow.cloud_edit, 1), (flow.primary, 2)]); flow.next()
+    flow.ckey_edit.setText('123456789012345'); flow.next(); flow.csecret_edit.setText('abc'); flow.next()
+    shoot('test-hosting', [(flow.primary, 1), (flow.skip_button, 2)]); flow.advance()
+    shoot('time', [(flow.time_edit, 1), (flow.primary, 2)]); flow.next()
+    shoot('startup', [(flow.step().page.findChildren(ui.QPushButton)[0], 1), (flow.step().page.findChildren(ui.QPushButton)[1], 2)]); flow.choose_startup(True)
+    shoot('done', [(flow.primary, 1)])
     if window.tray: window.tray.hide()
     print('wrote', sorted(p.name for p in out.iterdir()))
 
