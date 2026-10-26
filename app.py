@@ -3,6 +3,7 @@ timer that publishes posts when they are due, a first-run wizard that asks one t
 dialog. Network work runs in threads so the window stays responsive. Runs on Windows and macOS."""
 import contextlib
 import datetime as dt
+import signal
 import sys
 import webbrowser
 from pathlib import Path
@@ -718,6 +719,9 @@ def main(argv=None):
         engine = eng.Engine(data, settings)
         window = MainWindow(engine, settings, lock)
         window.apply_startup_setting()
+        if not cfg.WINDOWS:   # a termination signal (log-out, `kill`) ends the app the clean way, so the lock is released
+            def terminate(*_): window.quitting = True; window.close()
+            with contextlib.suppress(Exception): signal.signal(signal.SIGTERM, terminate)
         if minimized and window.tray: window.hide()
         else:
             window.show()

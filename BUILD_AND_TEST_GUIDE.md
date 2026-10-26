@@ -100,7 +100,7 @@ The same source builds `PostQueue.app` on a Mac. What differs is in `settings.py
 
 | Requirement | Detail |
 |---|---|
-| Mac | macOS 12 or later. The build matches the Mac's CPU: Apple silicon gives `arm64`, Intel gives `x86_64`. PyInstaller cannot cross-compile, so build each on its own kind of Mac (CI uses `macos-latest` and `macos-13`). |
+| Mac | macOS 12 or later. The build matches the Mac's CPU: Apple silicon gives `arm64`, Intel gives `x86_64`. PyInstaller cannot cross-compile, so build each on its own kind of Mac (CI uses `macos-latest` and `macos-15-intel`). |
 | Python | 3.12 from python.org (`python3`), with `python3 -m pip install -r requirements-build.txt`. |
 | Signing (optional) | A Developer ID Application certificate in the keychain (`SIGN_IDENTITY`), and for notarization a `notarytool` keychain profile (`NOTARY_PROFILE`, made with `xcrun notarytool store-credentials`). Unsigned builds work, but Gatekeeper asks for a right-click > Open on first launch. |
 
@@ -111,7 +111,7 @@ python3 -m pip install -r requirements-build.txt
 
 The script runs the tests, builds the app from `installer/PostQueue.spec` (`PQ_MODE=app`, the `BUNDLE` branch), signs it if `SIGN_IDENTITY` is set, writes `dist/PostQueue-<version>-macos-<arch>.dmg` (the app plus an Applications link, so installing is one drag), a zip, notarizes and staples when `NOTARY_PROFILE` is set, and writes the SHA-256 files. `tests/release/test-release-macos.sh dist` then checks the bundle, the disk image, launch, lock, second launch, clean quit and crash recovery. The CI workflow does all of this for both architectures.
 
-**Not yet run on a Mac.** The macOS build and release scripts were written on Windows alongside the Windows package and are exercised by CI only; the keychain, LaunchAgent and data-folder logic is covered by the engine tests with the `security` tool and the home folder simulated. Run `./build_macos.sh` and the release script on a real Mac before shipping a Mac build.
+**Run on a Mac through CI only.** The macOS build and release scripts were written on Windows and first ran on GitHub's Apple-silicon runner (see the test record): the tests pass there, the app and disk image build, and the release checks pass. The keychain, LaunchAgent and data-folder logic is also covered by the engine tests with the `security` tool and the home folder simulated. Nobody has yet opened the app on a real Mac desktop; do that before shipping a Mac build.
 
 ## 8. Test record: 1.0.0, 2026-10-26
 
@@ -126,6 +126,10 @@ Built and tested on an ARM64 Windows 11 PC (build 26300), without administrator 
 | Package contents | **Pass**: notices and licences in `_internal`; numpy, requests and the unused Qt parts are not bundled (22 MB ARM64, 29 MB x64 portable; 18 MB and 23 MB MSIs) |
 | Microsoft Defender scan of `dist\` | **Pass**: no threats |
 | Screens (`tools\screenshots.py`) | Reviewed: queue with photo and video thumbnails, details pane, the not-set-up banner, the three settings tabs, and the five wizard screens (`docs\screenshots\`) |
+| CI, Windows x64: GitHub `windows-latest`, run #3 at commit `f6645fd` | **Pass**: 66 tests, MSI built, release tests 33 of 33 including the MSI install and clean uninstall. 2 min 59 s. |
+| CI, Windows ARM64: GitHub `windows-11-arm`, run #3 at commit `f6645fd` | **Pass**: 66 tests, release tests 33 of 33. 3 min 53 s. The ARM64 runner serves this private repository. |
+| CI, macOS Apple silicon: GitHub `macos-latest`, run #3 at commit `f6645fd` | 66 tests pass, `PostQueue.app` and the DMG build, release tests **13 of 14**: "Clean quit removes lock" failed because the app did not handle SIGTERM (fixed after run #3: the app now closes cleanly on it). Start 0 s. |
+| CI, macOS Intel | Not run: the workflow targeted the retired `macos-13` runner; now `macos-15-intel`. |
 
 **Found and fixed while testing:**
 - **Pillow's PyInstaller hook bundled numpy** (18 MB) and the requests stack; both are now excluded in the spec.
@@ -134,8 +138,12 @@ Built and tested on an ARM64 Windows 11 PC (build 26300), without administrator 
 - **WixUI_Minimal already sets `ARPNOMODIFY`**; declaring it again fails the MSI build with WIX0091.
 - **The first-run wizard is modal**, so the release tests' close message was blocked on a fresh data folder. The test settings now set `setup_done`, and the script stops a process that did not close so later checks stay meaningful.
 
+**Found and fixed through CI:**
+- **macOS:** the secrets test only expected the Windows and fallback markers, not `keychain:`; worker threads parented to widgets made the interpreter crash at exit (now kept alive by attributes only, and the test session leaves with its real result on macOS); SIGTERM ended the app without releasing the lock (now handled as a clean quit).
+- **CI:** the Intel Mac job targeted the retired `macos-13` runner.
+
 **Not yet tested:**
 - a real post: no Instagram professional account, Meta app or Cloudinary account was available in this session. The setup wizard's Sign in and Test hosting steps, and one photo and one video post, need a manual run before release.
-- the macOS build: `build_macos.sh` and `tests/release/test-release-macos.sh` were written on Windows and have not run on a Mac (see section 7).
-- a clean machine, Windows 10, real Intel/AMD hardware, a per-machine MSI install, signed builds, CI (the workflow is written but the project is not in a repository yet)
+- the macOS app on a real Mac desktop (CI runs it headless), and the Intel Mac build
+- a clean Windows machine, Windows 10, a per-machine MSI install, signed builds
 - display scaling other than 200%, Narrator
