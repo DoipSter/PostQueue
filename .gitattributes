@@ -1,0 +1,9 @@
+# Normalise text; keep Unix line endings on the scripts a Mac runs and Windows endings on the Windows ones.
+* text=auto
+*.sh text eol=lf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.rtf text eol=crlf
+*.png binary
+*.ico binary
+*.icns binary
