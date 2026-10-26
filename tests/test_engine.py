@@ -229,7 +229,8 @@ def test_describe_errors():
 
 
 # --- settings ----------------------------------------------------------------------------------------------------
-def test_secrets_are_protected_on_disk(tmp_path):
+def test_secrets_are_protected_on_disk(tmp_path, monkeypatch):
+    monkeypatch.setattr(cfg, 'MAC', False)   # the keychain path is covered below; this test must not touch a real keychain
     s = cfg.Settings(tmp_path / 'settings.json'); s['access_token'] = 'EAAB-secret'; s['cloudinary_api_secret'] = 'shh'; s['ig_user_id'] = '42'; s.save()
     raw = (tmp_path / 'settings.json').read_text(encoding='utf-8')
     assert 'EAAB-secret' not in raw and 'shh' not in raw and ('dpapi:' in raw or 'plain:' in raw)

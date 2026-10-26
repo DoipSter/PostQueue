@@ -169,7 +169,7 @@ class InstagramPanel(QWidget):
     def run_task(self, fn, on_done, waiting):
         if self.task is not None: return
         self.cancelled = False; self.busy(waiting)
-        self.task = Task(fn, parent=self)
+        self.task = Task(fn)   # kept alive by this attribute, not by a Qt parent: a parent would delete it under Python at exit
         def finish(): self.task = None; self.busy(None)
         def ok(result): finish(); on_done(result)
         def bad(message): finish(); self.status.setText(message); self.status.setStyleSheet(BAD_STYLE)
@@ -260,7 +260,7 @@ class HostingPanel(QWidget):
         try: provider = hosting.make_provider(self.settings) or hosting.Cloudinary('', '', '')
         except hosting.HostingError as exc: self.status.setText(str(exc)); self.status.setStyleSheet(BAD_STYLE); return
         self.status.setText('Uploading a test image…'); self.status.setStyleSheet('')
-        self.task = Task(provider.test, parent=self)
+        self.task = Task(provider.test)
         self.task.done.connect(lambda url: (self.status.setText('Hosting works: a test image was uploaded and removed.'), self.status.setStyleSheet(OK_STYLE), self.changed.emit()))
         self.task.failed.connect(lambda m: (self.status.setText(m), self.status.setStyleSheet(BAD_STYLE)))
         self.task.start()
@@ -599,7 +599,7 @@ class MainWindow(QMainWindow):
         if instagram is None or provider is None:
             self.engine.update(post, status='failed', error='Not set up yet: ' + ('connect your Instagram account' if instagram is None else 'set up media hosting') + ' in Settings.')
             self.refresh(); return
-        self.worker = PublishWorker(self.engine, post, instagram, provider, self)
+        self.worker = PublishWorker(self.engine, post, instagram, provider)
         self.worker.progress.connect(self.on_progress); self.worker.finished_post.connect(self.on_published); self.worker.start()
         self.progress.setValue(0); self.progress.show(); self.progress_text.setText(f'Posting {post.name()}…'); self.refresh()
 
@@ -642,7 +642,7 @@ class MainWindow(QMainWindow):
         expiry = self.settings.token_expiry()
         if not (self.settings.connected() and self.settings.get('api_host') == ig.IG_HOST and expiry): return
         if expiry - eng.now_local() > dt.timedelta(days=15): return
-        task = Task(lambda: ig.refresh_instagram(self.settings['access_token']), parent=self)
+        task = Task(lambda: ig.refresh_instagram(self.settings['access_token']))
         def done(result):
             token, expires = result
             self.settings['access_token'] = token
