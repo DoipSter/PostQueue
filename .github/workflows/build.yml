@@ -1,0 +1,102 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      QT_QPA_PLATFORM: offscreen
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.arch }}
+
+      - name: Install pinned build tools
+        run: python -m pip install -r requirements-build.txt
+
+      - name: Install WiX Toolset v5
+        run: |
+          dotnet tool install wix --version 5.0.2 --tool-path "$env:RUNNER_TEMP\wix"
+          & "$env:RUNNER_TEMP\wix\wix.exe" extension add -g WixToolset.UI.wixext/5.0.2
+          "WIX=$env:RUNNER_TEMP\wix" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: Build (runs the engine and interface tests first)
+        shell: cmd
+        env:
+          PY: python
+          # Optional signing with Azure Trusted Signing; leave the secrets unset to build unsigned.
+          SIGN_DLIB: ${{ secrets.SIGN_DLIB }}
+          SIGN_METADATA: ${{ secrets.SIGN_METADATA }}
+        run: Build_Windows_EXE.cmd < nul
+
+      - name: Release tests (launch, lock, second launch, MSI install and uninstall)
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests\release\Test-Release.ps1 -Dist dist -Out release-results
+        env:
+          QT_QPA_PLATFORM: windows
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PostQueue-${{ matrix.arch }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/*.msi
+            dist/*.sha256.txt
+            release-results/
+
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-latest
+          - arch: x86_64
+            runner: macos-13
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned build tools
+        run: python3 -m pip install -r requirements-build.txt
+
+      - name: Build the app and disk image (runs the tests first)
+        env:
+          # Optional signing and notarization; leave the secrets unset to build unsigned.
+          SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
+          NOTARY_PROFILE: ${{ secrets.MAC_NOTARY_PROFILE }}
+        run: chmod +x build_macos.sh && ./build_macos.sh
+
+      - name: Release tests (bundle, disk image, launch, lock, second launch, quit, crash)
+        run: chmod +x tests/release/test-release-macos.sh && tests/release/test-release-macos.sh dist release-results
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: PostQueue-macos-${{ matrix.arch }}
+          path: |
+            dist/*.dmg
+            dist/*.zip
+            dist/*.sha256.txt
+            release-results/

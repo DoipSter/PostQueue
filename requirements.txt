@@ -1,0 +1,3 @@
+# Runtime dependencies of PostQueue (bundled into the EXE by the build).
+PySide6-Essentials==6.9.1
+pillow==13.0.0

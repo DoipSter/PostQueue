@@ -1,0 +1,17 @@
+# Build outputs (the CI workflow uploads them as artifacts; releases carry the dist files)
+dist/
+build/
+release-results/
+*.log
+*.wixpdb
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

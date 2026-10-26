@@ -1,0 +1,42 @@
+POSTQUEUE - THIRD-PARTY NOTICES
+===============================
+
+The PostQueue program files include the following third-party software. Full licence texts are in the licenses
+folder next to this file.
+
+BUNDLED IN THE PROGRAM
+----------------------
+Qt 6.9.1 (QtCore, QtGui, QtWidgets and their Windows plugins)
+  Copyright (C) The Qt Company Ltd. and other contributors.
+  Used under the GNU Lesser General Public License v3 (licenses\LGPL-3.0.txt, which refers to
+  licenses\GPL-3.0.txt). Source code: https://code.qt.io and https://download.qt.io/official_releases/qt/
+  In the one-folder build and the MSI installation, the Qt libraries are separate DLL files in the _internal
+  folder, and you may replace them with your own compatible build of the same Qt version.
+
+Qt for Python (PySide6 6.9.1, Shiboken6 6.9.1)
+  Copyright (C) The Qt Company Ltd. Used under the GNU Lesser General Public License v3 (licenses\LGPL-3.0.txt).
+  Source code: https://code.qt.io/cgit/pyside/pyside-setup.git
+
+Pillow 13.0.0 (the friendly PIL fork)
+  Copyright (C) 2010 by Jeffrey A. Clark and contributors; PIL Copyright (C) 1997-2011 by Secret Labs AB and
+  Copyright (C) 1995-2011 by Fredrik Lundh and contributors. Used under the MIT-CMU licence (licenses\Pillow.txt).
+  Pillow bundles libjpeg, zlib, libtiff, libwebp and others under their own licences, listed in the same file's
+  distribution. https://github.com/python-pillow/Pillow
+
+Python 3.12 runtime and standard library, with the components it bundles (including OpenSSL, libffi and zlib)
+  Copyright (C) Python Software Foundation. Used under the PSF License Agreement and the licences of the bundled
+  components (licenses\Python-PSF.txt).
+
+PyInstaller bootloader 6.11.1
+  Copyright (C) PyInstaller Development Team. GPL v2 or later with an exception that allows the bootloader to be
+  distributed with programs under any licence. https://github.com/pyinstaller/pyinstaller
+
+Microsoft Visual C++ runtime (VCRUNTIME140, MSVCP140)
+  Copyright (C) Microsoft Corporation. Redistributed under the Visual Studio redistribution terms.
+
+WEB SERVICES USED AT RUN TIME (NOT INCLUDED IN THE PROGRAM)
+-----------------------------------------------------------
+PostQueue talks to these services with the accounts you connect in Settings. Their terms apply to that use.
+  Meta Graph API / Instagram Platform    https://developers.facebook.com/terms/
+  Cloudinary (media hosting)             https://cloudinary.com/tou
+Instagram is a trademark of Meta Platforms, Inc. PostQueue is not affiliated with or endorsed by Meta or Cloudinary.

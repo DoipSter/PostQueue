@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Windows Installer package for PostQueue (WiX Toolset v5), built by Build_Windows_EXE.cmd when WiX is available.
+  Installs the one-folder build (dist\PostQueue-<version>-<arch>).
+
+  Per-user (default, no administrator rights; installs to %LOCALAPPDATA%\Programs\PostQueue):
+    msiexec /i PostQueue-1.0.0-x64.msi /qn
+  Per-machine (administrator; installs to Program Files):
+    msiexec /i PostQueue-1.0.0-x64.msi ALLUSERS=1 /qn
+  Uninstall:
+    msiexec /x PostQueue-1.0.0-x64.msi /qn
+  The installer also adds a per-user "start at sign-in" Run entry ("PostQueue Startup") so scheduled posts go out; the
+  app's Settings > General turns it off by marking it disabled in StartupApproved (as Task Manager does), never by
+  deleting it: Windows Installer stops re-creating a Run value whose name was deleted by hand before an uninstall.
+  Uninstalling removes the program files, the shortcut and the Run entry. The user's queue, media copies and settings
+  (%LOCALAPPDATA%\PostQueue) stay.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="PostQueue" Manufacturer="PostQueue" Version="$(var.Version)" UpgradeCode="$(var.UpgradeCode)"
+           Scope="perUserOrMachine" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="A newer version of PostQueue is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <Icon Id="AppIcon" SourceFile="$(var.ProjectDir)assets\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <!-- One screen with an Install button (WixUI_Minimal, from WixToolset.UI.wixext; it also sets ARPNOMODIFY). Silent installs still work with /qn. -->
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.ProjectDir)installer\License.rtf" />
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="PostQueue">
+        <Files Include="$(var.SourceDir)\**" />
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut">
+        <Shortcut Id="AppShortcut" Name="PostQueue" Description="Schedule Instagram photos and videos"
+                  Target="[INSTALLFOLDER]$(var.ExeName)" WorkingDirectory="INSTALLFOLDER" Icon="AppIcon" />
+        <RegistryValue Root="HKCU" Key="Software\PostQueue" Name="StartMenuShortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+      <Component Id="StartAtSignIn">
+        <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\Run" Name="PostQueue Startup" Type="string"
+                       Value="&quot;[INSTALLFOLDER]$(var.ExeName)&quot; --minimized" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+  </Package>
+</Wix>

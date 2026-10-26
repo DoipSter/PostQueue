@@ -1,0 +1,4 @@
+# Pinned build and test tools for Build_Windows_EXE.cmd: py -m pip install -r requirements-build.txt
+-r requirements.txt
+pyinstaller==6.11.1
+pytest==8.3.4
