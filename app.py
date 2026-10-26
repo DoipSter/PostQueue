@@ -9,10 +9,10 @@ import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import QDate, QDateTime, QEvent, QPoint, QPointF, QSize, Qt, QThread, QTime, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPixmap
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPixmap, QTextCharFormat
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCalendarWidget, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMenu,
-                               QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
+                               QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu,
+                               QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
                                QStyle, QSystemTrayIcon, QTabWidget, QTimeEdit, QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 import engine as eng
@@ -24,9 +24,9 @@ from version import PRODUCT, VERSION
 TITLE = f'{PRODUCT} {VERSION}'
 FILE_FILTER = 'Photos and videos (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff *.gif *.mp4 *.mov *.m4v);;All files (*)'
 CHECK_SECONDS = 30
-STATUS_COLOR = {'queued': None, 'posting': '#2b6cb0', 'posted': '#2f855a', 'failed': '#c53030', 'missed': '#b7791f'}
+STATUS_COLOR = {'queued': None, 'posting': '#8ec5ff', 'posted': '#7fe0a0', 'failed': '#ff8a7a', 'missed': '#ffcf6e'}
 TRAY_NAME = 'the menu bar' if cfg.MAC else 'the notification area'
-OK_STYLE, BAD_STYLE, MUTED_STYLE = 'color: #2f855a;', 'color: #c53030;', 'color: #666;'
+OK_STYLE, BAD_STYLE, MUTED_STYLE = 'color: #7fe0a0;', 'color: #ff8a7a;', 'color: rgba(255,255,255,0.62);'
 
 
 def resource(name):
@@ -97,8 +97,9 @@ class DateTimePicker(QWidget):
         self.time_edit.timeChanged.connect(lambda t: self.dateTimeChanged.emit(self.dateTime()))
         row.addWidget(self.date_button, 1); row.addWidget(self.time_edit)
         self.calendar = QCalendarWidget(); self.calendar.setWindowFlags(Qt.Popup); self.calendar.setGridVisible(False)
-        self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader); self.calendar.setMinimumSize(400, 320)
-        font = self.calendar.font(); font.setPointSize(font.pointSize() + 2); self.calendar.setFont(font)
+        self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader); self.calendar.setMinimumSize(400, 320); self.calendar.setStyleSheet(CALENDAR_STYLE)
+        weekend = QTextCharFormat(); weekend.setForeground(QColor('#ffc6bf'))
+        for day in (Qt.Saturday, Qt.Sunday): self.calendar.setWeekdayTextFormat(day, weekend)
         self.calendar.clicked.connect(self.pick_date); self.calendar.activated.connect(self.pick_date)
         self.update_text()
 
@@ -326,41 +327,105 @@ class GeneralPanel(QWidget):
 class SettingsDialog(QDialog):
     """Instagram account, media hosting and general behaviour, for changes after setup."""
     def __init__(self, settings, parent=None):
-        super().__init__(parent); self.settings = settings; self.setWindowTitle(f'{PRODUCT} Settings'); self.resize(680, 660); self.setMinimumSize(560, 600)
-        layout = QVBoxLayout(self); self.tabs = QTabWidget(); layout.addWidget(self.tabs, 1)
+        super().__init__(parent); self.settings = settings; self.setWindowTitle(f'{PRODUCT} Settings'); self.resize(760, 720); self.setMinimumSize(620, 640)
+        self.setObjectName('settings'); self.setStyleSheet(APP_STYLE)
+        layout = QVBoxLayout(self); layout.setContentsMargins(16, 16, 16, 16); self.tabs = QTabWidget(); layout.addWidget(self.tabs, 1)
         self.instagram, self.hosting, self.general = InstagramPanel(settings), HostingPanel(settings), GeneralPanel(settings)
         for panel, name in ((self.instagram, 'Instagram'), (self.hosting, 'Media hosting'), (self.general, 'General')):
-            page = QWidget(); pl = QVBoxLayout(page); pl.addWidget(panel); pl.addStretch(1); self.tabs.addTab(page, name)
+            page = QWidget(); pl = QVBoxLayout(page); pl.setContentsMargins(12, 12, 12, 12); pl.addWidget(panel); pl.addStretch(1)
+            area = QScrollArea(); area.setWidgetResizable(True); area.setFrameShape(QFrame.NoFrame); area.setWidget(page); self.tabs.addTab(area, name)
         buttons = QDialogButtonBox(QDialogButtonBox.Close); buttons.rejected.connect(self.accept); layout.addWidget(buttons)
         if not settings.connected(): self.tabs.setCurrentIndex(0)
         elif not settings.hosting_ready(): self.tabs.setCurrentIndex(1)
 
 
+# --- The look: a soft gradient behind everything, frosted-glass controls, large type ---------------------------------
+GRADIENT = 'qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #3a1f45, stop:0.55 #22203a, stop:1 #4a2424)'
+APP_STYLE = f'''
+QMainWindow#main, QDialog#settings {{ background: {GRADIENT}; }}
+#main QWidget, #settings QWidget {{ font-size: 12pt; }}
+#main QLabel, #settings QLabel {{ color: white; background: transparent; }}
+#main QToolBar {{ background: transparent; border: none; padding: 6px 4px; spacing: 8px; }}
+#main QToolButton {{ color: white; font-size: 12pt; padding: 8px 16px; border-radius: 12px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.32); }}
+#main QToolButton:hover {{ background: rgba(255,255,255,0.19); }}
+#main QToolButton:checked {{ background: rgba(229,57,43,0.45); border-color: rgba(255,255,255,0.6); }}
+#main QTreeWidget {{ background: rgba(255,255,255,0.06); alternate-background-color: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 12px; color: white; padding: 4px; outline: none; }}
+#main QTreeWidget::item {{ padding: 6px; border-radius: 8px; }}
+#main QTreeWidget::item:selected {{ background: rgba(229,57,43,0.55); color: white; }}
+#main QTreeWidget::item:hover {{ background: rgba(255,255,255,0.08); }}
+#main QHeaderView::section {{ background: transparent; color: rgba(255,255,255,0.6); border: none; padding: 6px; font-size: 10pt; letter-spacing: 1px; }}
+#main QSplitter::handle {{ background: transparent; }}
+#main QLineEdit, #main QPlainTextEdit, #main QComboBox, #main QTimeEdit, #settings QLineEdit, #settings QComboBox, #settings QTimeEdit, #settings QSpinBox {{
+  color: white; padding: 8px 12px; border-radius: 10px; background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.26); selection-background-color: #e5392b; }}
+#main QLineEdit:focus, #main QPlainTextEdit:focus, #settings QLineEdit:focus {{ border: 1px solid rgba(255,255,255,0.7); }}
+#main QComboBox QAbstractItemView, #settings QComboBox QAbstractItemView {{ background: #2a2440; color: white; selection-background-color: #e5392b; }}
+#main QPushButton, #settings QPushButton {{ color: white; padding: 9px 20px; border-radius: 12px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.32); }}
+#main QPushButton:hover, #settings QPushButton:hover {{ background: rgba(255,255,255,0.19); border-color: rgba(255,255,255,0.55); }}
+#main QPushButton:pressed, #settings QPushButton:pressed {{ background: rgba(255,255,255,0.28); }}
+#main QPushButton:disabled, #settings QPushButton:disabled {{ color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); }}
+#main QPushButton#save, #main QPushButton#post_now, #main QPushButton#banner_button {{ background: rgba(255,255,255,0.24); border: 1px solid rgba(255,255,255,0.7); font-weight: 600; }}
+#main QPushButton#save:hover, #main QPushButton#post_now:hover {{ background: rgba(255,255,255,0.34); }}
+#main QPushButton#date {{ text-align: left; padding-left: 16px; }}
+#main QPushButton#quick {{ padding: 5px 12px; font-size: 11pt; border-radius: 9px; }}
+#settings QScrollArea {{ background: transparent; border: none; }}
+#settings QScrollArea > QWidget > QWidget {{ background: transparent; }}
+#settings QScrollBar:vertical {{ background: transparent; width: 10px; }}
+#settings QScrollBar::handle:vertical {{ background: rgba(255,255,255,0.25); border-radius: 5px; min-height: 30px; }}
+#settings QScrollBar::add-line:vertical, #settings QScrollBar::sub-line:vertical {{ height: 0; }}
+#main QFrame#banner {{ background: rgba(255,196,0,0.14); border: 1px solid rgba(255,196,0,0.5); border-radius: 12px; }}
+#main QFrame#banner QLabel {{ color: white; }}
+#main QStatusBar {{ background: transparent; color: rgba(255,255,255,0.7); }}
+#main QStatusBar::item {{ border: none; }}
+#main QProgressBar {{ border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; background: rgba(255,255,255,0.08); text-align: center; color: white; }}
+#main QProgressBar::chunk {{ background: #e5392b; border-radius: 5px; }}
+#main QLabel#empty {{ color: rgba(255,255,255,0.7); font-size: 15pt; background: rgba(255,255,255,0.05); border: 1px dashed rgba(255,255,255,0.3); border-radius: 16px; padding: 40px; }}
+#main QLabel#name {{ font-size: 14pt; font-weight: 600; }}
+#settings QTabWidget::pane {{ border: 1px solid rgba(255,255,255,0.18); border-radius: 12px; background: rgba(255,255,255,0.04); top: -1px; }}
+#settings QTabBar::tab {{ color: rgba(255,255,255,0.75); padding: 10px 22px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18); border-bottom: none; border-top-left-radius: 10px; border-top-right-radius: 10px; margin-right: 4px; }}
+#settings QTabBar::tab:selected {{ color: white; background: rgba(255,255,255,0.16); }}
+#settings QGroupBox {{ color: rgba(255,255,255,0.85); border: 1px solid rgba(255,255,255,0.18); border-radius: 12px; margin-top: 14px; padding-top: 10px; }}
+#settings QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 6px; }}
+#settings QCheckBox {{ color: white; spacing: 10px; }}
+#settings QDialogButtonBox QPushButton {{ min-width: 100px; }}
+'''
+CALENDAR_STYLE = '''
+QCalendarWidget { background: #2a2440; color: white; border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; }
+QCalendarWidget QWidget { background: #2a2440; color: white; font-size: 12pt; }
+QCalendarWidget QWidget#qt_calendar_navigationbar { background: rgba(255,255,255,0.08); }
+QCalendarWidget QToolButton { color: white; background: transparent; border-radius: 8px; padding: 6px 12px; font-size: 13pt; }
+QCalendarWidget QToolButton:hover { background: rgba(255,255,255,0.15); }
+QCalendarWidget QAbstractItemView { background: #2a2440; color: white; selection-background-color: #e5392b; selection-color: white; outline: none; }
+QCalendarWidget QAbstractItemView:disabled { color: rgba(255,255,255,0.3); }
+QCalendarWidget QSpinBox { color: white; background: rgba(255,255,255,0.1); border-radius: 6px; }
+'''
+
+
 # --- First-run setup: one thing per screen, large type, glass buttons ------------------------------------------------
-SETUP_STYLE = '''
-#setup { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #3a1f45, stop:0.55 #22203a, stop:1 #4a2424); }
-#setup QLabel { color: white; background: transparent; }
-#setup QLabel#title { font-size: 26pt; font-weight: 600; }
-#setup QLabel#lead { font-size: 15pt; color: rgba(255,255,255,0.88); }
-#setup QLabel#hint { font-size: 11pt; color: rgba(255,255,255,0.62); }
-#setup QLabel#status { font-size: 13pt; color: rgba(255,255,255,0.85); }
-#setup QLabel#progress { font-size: 10pt; color: rgba(255,255,255,0.55); letter-spacing: 2px; }
-#setup QLineEdit, #setup QComboBox, #setup QTimeEdit {
+SETUP_STYLE = f'''
+#setup {{ background: {GRADIENT}; }}
+#setup QLabel {{ color: white; background: transparent; }}
+#setup QLabel#title {{ font-size: 26pt; font-weight: 600; }}
+#setup QLabel#lead {{ font-size: 15pt; color: rgba(255,255,255,0.88); }}
+#setup QLabel#hint {{ font-size: 11pt; color: rgba(255,255,255,0.62); }}
+#setup QLabel#status {{ font-size: 13pt; color: rgba(255,255,255,0.85); }}
+#setup QLabel#progress {{ font-size: 10pt; color: rgba(255,255,255,0.55); letter-spacing: 2px; }}
+#setup QLineEdit, #setup QComboBox, #setup QTimeEdit {{
   font-size: 17pt; padding: 10px 16px; border-radius: 12px; color: white;
-  background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.28); selection-background-color: #e5392b; }
-#setup QLineEdit:focus, #setup QComboBox:focus, #setup QTimeEdit:focus { border: 1px solid rgba(255,255,255,0.7); }
-#setup QComboBox QAbstractItemView { font-size: 14pt; background: #2a2440; color: white; selection-background-color: #e5392b; }
-#setup QPushButton {
+  background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.28); selection-background-color: #e5392b; }}
+#setup QLineEdit:focus, #setup QComboBox:focus, #setup QTimeEdit:focus {{ border: 1px solid rgba(255,255,255,0.7); }}
+#setup QComboBox QAbstractItemView {{ font-size: 14pt; background: #2a2440; color: white; selection-background-color: #e5392b; }}
+#setup QPushButton {{
   font-size: 15pt; padding: 13px 34px; border-radius: 14px; color: white;
-  background: rgba(255,255,255,0.11); border: 1px solid rgba(255,255,255,0.38); }
-#setup QPushButton:hover { background: rgba(255,255,255,0.20); border-color: rgba(255,255,255,0.6); }
-#setup QPushButton:pressed { background: rgba(255,255,255,0.28); }
-#setup QPushButton:disabled { color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); }
-#setup QPushButton#primary { background: rgba(255,255,255,0.24); border: 1px solid rgba(255,255,255,0.7); font-weight: 600; }
-#setup QPushButton#primary:hover { background: rgba(255,255,255,0.34); }
-#setup QPushButton#choice { text-align: left; padding: 16px 24px; }
-#setup QPushButton#link { background: transparent; border: none; color: rgba(255,255,255,0.72); font-size: 12pt; padding: 8px 10px; text-decoration: underline; }
-#setup QPushButton#link:hover { color: white; }
+  background: rgba(255,255,255,0.11); border: 1px solid rgba(255,255,255,0.38); }}
+#setup QPushButton:hover {{ background: rgba(255,255,255,0.20); border-color: rgba(255,255,255,0.6); }}
+#setup QPushButton:pressed {{ background: rgba(255,255,255,0.28); }}
+#setup QPushButton:disabled {{ color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); }}
+#setup QPushButton#primary {{ background: rgba(255,255,255,0.24); border: 1px solid rgba(255,255,255,0.7); font-weight: 600; }}
+#setup QPushButton#primary:hover {{ background: rgba(255,255,255,0.34); }}
+#setup QPushButton#choice {{ text-align: left; padding: 16px 24px; }}
+#setup QPushButton#link {{ background: transparent; border: none; color: rgba(255,255,255,0.72); font-size: 12pt; padding: 8px 10px; text-decoration: underline; }}
+#setup QPushButton#link:hover {{ color: white; }}
 '''
 
 
@@ -654,7 +719,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.engine, self.settings, self.lock = engine, settings, lock
         self.worker = None; self.current = None; self.dirty = False; self.thumbs = {}; self.quitting = False
-        self.setWindowTitle(TITLE); self.setObjectName('main'); self.resize(1040, 640); self.setAcceptDrops(True)
+        self.setWindowTitle(TITLE); self.setObjectName('main'); self.resize(1180, 720); self.setAcceptDrops(True); self.setStyleSheet(APP_STYLE)
         self.build(); self.build_tray()
         self.refresh()
         self.timer = QTimer(self); self.timer.timeout.connect(self.tick); self.timer.start(CHECK_SECONDS * 1000)
@@ -685,8 +750,7 @@ class MainWindow(QMainWindow):
 
         central = QWidget(); outer = QVBoxLayout(central); outer.setContentsMargins(8, 8, 8, 8); outer.setSpacing(8)
         self.banner = QFrame(); self.banner.setObjectName('banner'); self.banner.setFrameShape(QFrame.StyledPanel)
-        self.banner.setStyleSheet('#banner { background: #fff4d6; border: 1px solid #e0c070; border-radius: 6px; } #banner QLabel { color: #3b2f00; }')
-        row = QHBoxLayout(self.banner); self.banner_text = QLabel(''); self.banner_text.setWordWrap(True); row.addWidget(self.banner_text, 1)
+        row = QHBoxLayout(self.banner); row.setContentsMargins(14, 10, 14, 10); self.banner_text = QLabel(''); self.banner_text.setWordWrap(True); row.addWidget(self.banner_text, 1)
         self.banner_button = QPushButton('Finish setup'); self.banner_button.setObjectName('banner_button'); self.banner_button.clicked.connect(self.open_setup); row.addWidget(self.banner_button)
         outer.addWidget(self.banner)
 
@@ -694,18 +758,19 @@ class MainWindow(QMainWindow):
         self.tree = QTreeWidget(); self.tree.setObjectName('queue'); self.tree.setAccessibleName('Scheduled posts')
         self.tree.setHeaderLabels(['', 'Media', 'Scheduled for', 'Status']); self.tree.setIconSize(QSize(64, 64)); self.tree.setRootIsDecorated(False)
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection); self.tree.setUniformRowHeights(True); self.tree.setAlternatingRowColors(True)
-        self.tree.setColumnWidth(0, 76); self.tree.setColumnWidth(1, 220); self.tree.setColumnWidth(2, 200)
+        header = self.tree.header(); header.setStretchLastSection(False); header.setSectionResizeMode(1, QHeaderView.Stretch)
+        for column, width in ((0, 76), (2, 210), (3, 110)): self.tree.setColumnWidth(column, width)
         self.tree.itemSelectionChanged.connect(self.selection_changed); self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self.context_menu)
         self.empty = QLabel('Drop photos or videos here, or click Add photos or videos.\n\nEach one is scheduled for the next free posting time; change it on the right.')
-        self.empty.setAlignment(Qt.AlignCenter); self.empty.setWordWrap(True); self.empty.setStyleSheet('color: #666; font-size: 11pt;')
+        self.empty.setAlignment(Qt.AlignCenter); self.empty.setWordWrap(True); self.empty.setObjectName('empty')
         left = QWidget(); ll = QVBoxLayout(left); ll.setContentsMargins(0, 0, 0, 0); ll.addWidget(self.tree, 1); ll.addWidget(self.empty, 1)
         split.addWidget(left)
 
         self.detail = QWidget(); self.detail.setObjectName('detail'); dl = QVBoxLayout(self.detail); dl.setContentsMargins(4, 0, 0, 0)
         self.preview = PreviewLabel(); self.preview.setStyleSheet('background: #1f1f23; border-radius: 6px;')
         dl.addWidget(self.preview, 1)
-        self.name_label = QLabel(''); self.name_label.setStyleSheet('font-weight: 600;'); self.name_label.setWordWrap(True); dl.addWidget(self.name_label)
+        self.name_label = QLabel(''); self.name_label.setObjectName('name'); self.name_label.setWordWrap(True); dl.addWidget(self.name_label)
         form = QFormLayout(); form.setLabelAlignment(Qt.AlignRight); dl.addLayout(form)
         when_box = QVBoxLayout(); when_box.setSpacing(4)
         self.when_edit = DateTimePicker(); self.when_edit.setObjectName('when'); self.when_edit.setAccessibleName('Scheduled date and time')
@@ -713,8 +778,8 @@ class MainWindow(QMainWindow):
         when_box.addWidget(self.when_edit)
         quick = QHBoxLayout(); quick.setSpacing(6)
         for text, delta in (('+1 hour', dt.timedelta(hours=1)), ('+1 day', dt.timedelta(days=1)), ('+1 week', dt.timedelta(days=7))):
-            b = QPushButton(text); b.setToolTip(f'Move the scheduled time by {text[1:]}'); b.clicked.connect(lambda _=False, d=delta: self.shift_when(d)); quick.addWidget(b)
-        slot = QPushButton('Next free slot'); slot.setToolTip('The next free default posting time (set in Settings > General)'); slot.clicked.connect(self.use_next_slot); quick.addWidget(slot)
+            b = QPushButton(text); b.setObjectName('quick'); b.setToolTip(f'Move the scheduled time by {text[1:]}'); b.clicked.connect(lambda _=False, d=delta: self.shift_when(d)); quick.addWidget(b)
+        slot = QPushButton('Next free slot'); slot.setObjectName('quick'); slot.setToolTip('The next free default posting time (set in Settings > General)'); slot.clicked.connect(self.use_next_slot); quick.addWidget(slot)
         quick.addStretch(1); when_box.addLayout(quick)
         form.addRow('Post on', when_box)
         self.fit_combo = QComboBox(); self.fit_combo.setObjectName('fit'); self.fit_combo.addItem('Crop to fit Instagram', 'crop'); self.fit_combo.addItem('Add white borders', 'pad')
