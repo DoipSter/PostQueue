@@ -128,8 +128,8 @@ Built and tested on an ARM64 Windows 11 PC (build 26300), without administrator 
 | Screens (`tools\screenshots.py`) | Reviewed: queue with photo and video thumbnails, details pane, the not-set-up banner, the three settings tabs, and the five wizard screens (`docs\screenshots\`) |
 | CI, Windows x64: GitHub `windows-latest`, run #3 at commit `f6645fd` | **Pass**: 66 tests, MSI built, release tests 33 of 33 including the MSI install and clean uninstall. 2 min 59 s. |
 | CI, Windows ARM64: GitHub `windows-11-arm`, run #3 at commit `f6645fd` | **Pass**: 66 tests, release tests 33 of 33. 3 min 53 s. The ARM64 runner serves this private repository. |
-| CI, macOS Apple silicon: GitHub `macos-latest`, run #3 at commit `f6645fd` | 66 tests pass, `PostQueue.app` and the DMG build, release tests **13 of 14**: "Clean quit removes lock" failed because the app did not handle SIGTERM (fixed after run #3: the app now closes cleanly on it). Start 0 s. |
-| CI, macOS Intel | Not run: the workflow targeted the retired `macos-13` runner; now `macos-15-intel`. |
+| CI, macOS Apple silicon: GitHub `macos-latest`, run #3 at commit `f6645fd` | 66 tests pass, `PostQueue.app` and the DMG build, release tests **13 of 14**: "Clean quit removes lock" failed because the app did not handle SIGTERM (fixed after run #3: the app now closes cleanly on it). |
+| CI, run #4 at commit `94ab2b9`, all four jobs | **Pass** in 4 min 3 s overall: Windows x64 (2 min) and ARM64 (4 min) with 33 of 33 release checks each; macOS Apple silicon (1 min 38 s) and macOS Intel on `macos-15-intel` (3 min) with the app, DMG and zip built and **14 of 14** release checks each. Unsigned on all four, as no signing secrets are set. |
 
 **Found and fixed while testing:**
 - **Pillow's PyInstaller hook bundled numpy** (18 MB) and the requests stack; both are now excluded in the spec.
@@ -144,6 +144,6 @@ Built and tested on an ARM64 Windows 11 PC (build 26300), without administrator 
 
 **Not yet tested:**
 - a real post: no Instagram professional account, Meta app or Cloudinary account was available in this session. The setup wizard's Sign in and Test hosting steps, and one photo and one video post, need a manual run before release.
-- the macOS app on a real Mac desktop (CI runs it headless), and the Intel Mac build
+- the macOS app on a real Mac desktop (CI builds and runs it headless on both Apple silicon and Intel)
 - a clean Windows machine, Windows 10, a per-machine MSI install, signed builds
 - display scaling other than 200%, Narrator
