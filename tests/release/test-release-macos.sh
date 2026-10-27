@@ -40,7 +40,7 @@ osascript -e 'tell application "PostQueue" to quit' >/dev/null 2>&1 || kill -TER
 wait_gone "$pid" && [ ! -f "$LOCK" ]; check 'Clean quit removes lock' $?
 "$BIN" & launched=$!; wait_lock; kill -KILL "$launched"; wait_gone "$launched"
 [ -f "$LOCK" ]; check 'Crash leaves lock behind' $?
-"$BIN" & launched=$!; wait_lock; sleep 1
+"$BIN" & launched=$!; for i in $(seq 1 100); do [ "$(app_pid)" = "$launched" ] && break; sleep 0.3; done   # the stale lock is there from the start: wait for the new process to claim it
 [ "$(app_pid)" = "$launched" ]; check 'Relaunch after crash takes over' $?
 kill -TERM "$launched"; wait_gone "$launched"
 
