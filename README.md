@@ -2,6 +2,7 @@
 
 A Windows and Mac app that posts photos and videos to Instagram on a schedule. Drop files in, pick the date and time for each, write the caption, and PostQueue publishes them through Meta's official Instagram API while it sits in the notification area or menu bar. Installing is one click (Windows) or one drag (Mac), and the first run asks for one thing per screen.
 
+- **Download:** the [Releases page](https://github.com/DoipSter/PostQueue/releases) has the Windows installers (x64, ARM64), the portable EXEs and the Mac disk images (Apple silicon, Intel) for each version
 - **Picture by picture:** [docs/walkthrough](docs/walkthrough/README.md) (every screen from first launch to a posted photo and its confirmation)
 - **Users:** [docs/USER_GUIDE.md](docs/USER_GUIDE.md) (install, one-time setup, daily use)
 - **Privacy and data deletion:** [docs/privacy.md](docs/privacy.md) and [docs/data-deletion.md](docs/data-deletion.md). The PostQueue service serves them at `<SERVICE_URL>/privacy` and `<SERVICE_URL>/data-deletion` (live once the Worker is deployed; `tools\make_pages.py` regenerates `service\pages.js` from the markdown). These are the addresses Meta's App Review asks for.

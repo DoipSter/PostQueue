@@ -2,6 +2,8 @@ name: Build and test
 
 on:
   push:
+    branches: ['**']
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -105,3 +107,40 @@ jobs:
             dist/*.zip
             dist/*.sha256.txt
             release-results/
+
+  # Pushing a tag such as v1.0.0 (or v1.0.0-rc1 for a pre-release) publishes the four packages as a GitHub Release.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, build-macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check that the tag matches version.py
+        run: |
+          tag="${GITHUB_REF_NAME#v}"; base="${tag%%-*}"
+          version="$(python3 -c 'from version import VERSION; print(VERSION)')"
+          [ "$base" = "$version" ] || { echo "Tag $GITHUB_REF_NAME does not match version.py ($version)"; exit 1; }
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: PostQueue-*
+          merge-multiple: true
+          path: packages
+
+      - name: Release notes from the changelog
+        run: |
+          version="$(python3 -c 'from version import VERSION; print(VERSION)')"
+          awk -v v="## $version" 'BEGIN{p=0} $0==v{p=1; next} /^## /{if(p) exit} p' CHANGELOG.md > notes.md
+          { echo; echo "SHA-256 of each file is in the matching \`.sha256.txt\`. Unsigned builds: Windows SmartScreen and macOS Gatekeeper warn on first launch."; } >> notes.md
+          ls -la packages
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          extra=""; case "$GITHUB_REF_NAME" in *-*) extra="--prerelease";; esac
+          gh release create "$GITHUB_REF_NAME" --title "PostQueue ${GITHUB_REF_NAME#v}" --notes-file notes.md $extra \
+            packages/*.exe packages/*.msi packages/*.zip packages/*.dmg packages/*.sha256.txt

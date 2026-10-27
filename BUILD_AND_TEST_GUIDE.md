@@ -77,9 +77,17 @@ Unsigned builds work, but SmartScreen warns, some antivirus products flag them, 
 
 **Release gate.** The release tests must pass on a clean machine for each architecture, plus real Intel/AMD hardware for x64. Before release, also run one real posting test (photo and video), scan `dist\` with Microsoft Defender, and install the MSI per machine (`ALLUSERS=1`).
 
-## 5. CI
+## 5. CI and releases
 
 `.github/workflows/build.yml` builds x64 on `windows-latest` and ARM64 on `windows-11-arm`. It installs the pinned tools and WiX v5, runs the build (which runs the tests), runs the release tests, and uploads the outputs and results. Signing runs when the signing secrets are present.
+
+**Releasing.** Set the version in `version.py`, update `CHANGELOG.md` (the section headed `## <version>` becomes the release notes), commit, then push a tag:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+The same workflow runs the four builds and, when they all pass, the `release` job publishes a GitHub Release named after the tag with every EXE, MSI, zip and DMG and their `.sha256.txt` files. A tag with a suffix (`v1.0.0-rc1`) is published as a pre-release. The job refuses a tag whose number does not match `version.py`.
 
 ## 6. Troubleshooting
 
