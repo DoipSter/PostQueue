@@ -11,7 +11,8 @@ from pathlib import Path
 from PySide6.QtCore import QDate, QDateTime, QEvent, QPoint, QPointF, QRect, QSize, Qt, QThread, QTime, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap, QRegion, QTextCharFormat
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCalendarWidget, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-                               QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu,
+                               QDoubleSpinBox, QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget,
+                               QListWidgetItem, QMainWindow, QMenu,
                                QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
                                QStyle, QSystemTrayIcon, QTabWidget, QTimeEdit, QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
@@ -357,6 +358,8 @@ class GeneralPanel(QWidget):
         self.fit_default = QComboBox(); self.fit_default.addItem('Crop to fit Instagram', 'crop'); self.fit_default.addItem('Add white borders', 'pad')
         self.fit_default.setCurrentIndex(max(0, self.fit_default.findData(self.settings.get('fit_mode', 'crop')))); self.fit_default.currentIndexChanged.connect(lambda i: self.set('fit_mode', self.fit_default.itemData(i)))
         form.addRow('Photos outside Instagram\'s shape range', self.fit_default)
+        self.update_box = QCheckBox('Tell me when a new version of PostQueue is available'); self.update_box.setChecked(bool(self.settings.get('update_check', True)))
+        self.update_box.toggled.connect(lambda on: self.set('update_check', on)); form.addRow(self.update_box)
         folder = QLabel(f'<a href="{Path(cfg.data_dir()).as_uri()}">Open the data folder</a> (queue, media copies, settings and log)'); folder.setOpenExternalLinks(True); form.addRow(folder)
 
     def set(self, key, value): self.settings[key] = value; self.settings.save()
@@ -415,6 +418,16 @@ QMainWindow#main, QDialog#settings {{ background: {GRADIENT}; }}
 #main QFrame#banner QLabel {{ color: white; }}
 #main QFrame#result[ok="true"] {{ background: rgba(80,200,120,0.18); border: 1px solid rgba(127,224,160,0.65); border-radius: 12px; }}
 #main QFrame#result[ok="false"] {{ background: rgba(229,57,43,0.18); border: 1px solid rgba(255,138,122,0.65); border-radius: 12px; }}
+#main QFrame#result[ok="update"] {{ background: rgba(100,160,255,0.16); border: 1px solid rgba(142,197,255,0.6); border-radius: 12px; }}
+#main QListWidget#items {{ background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18); border-radius: 10px; padding: 4px; }}
+#main QListWidget#items::item {{ margin: 2px; border-radius: 6px; }}
+#main QListWidget#items::item:selected {{ background: rgba(229,57,43,0.55); }}
+#main QCheckBox {{ color: white; spacing: 8px; }}
+#main QScrollArea#detail_scroll, #main QScrollArea#detail_scroll > QWidget > QWidget {{ background: transparent; border: none; }}
+#main QScrollBar:vertical {{ background: transparent; width: 10px; }}
+#main QScrollBar::handle:vertical {{ background: rgba(255,255,255,0.25); border-radius: 5px; min-height: 30px; }}
+#main QScrollBar::add-line:vertical, #main QScrollBar::sub-line:vertical {{ height: 0; }}
+#main QDoubleSpinBox {{ color: white; padding: 6px 10px; border-radius: 10px; background: rgba(255,255,255,0.09); border: 1px solid rgba(255,255,255,0.26); }}
 #main QLabel#result_text {{ font-size: 13pt; font-weight: 600; }}
 #main QPushButton#result_open {{ background: rgba(255,255,255,0.24); border: 1px solid rgba(255,255,255,0.7); font-weight: 600; }}
 #main QStatusBar {{ background: transparent; color: rgba(255,255,255,0.7); }}
@@ -799,6 +812,7 @@ class MainWindow(QMainWindow):
         self.poll = QTimer(self); self.poll.timeout.connect(self.poll_show_request); self.poll.start(1500)
         QTimer.singleShot(1500, self.tick)
         QTimer.singleShot(3000, self.maintain_token)
+        if settings.get('update_check', True): QTimer.singleShot(6000, self.check_update)
         geometry = settings.get('window')
         if isinstance(geometry, list) and len(geometry) == 4:
             with contextlib.suppress(Exception): self.setGeometry(*geometry)
@@ -812,11 +826,13 @@ class MainWindow(QMainWindow):
         self.act_add.setShortcut(QKeySequence.Open); self.act_add.triggered.connect(self.add_files)
         self.act_pause = QAction(style.standardIcon(QStyle.SP_MediaPause), 'Pause posting', self, checkable=True)
         self.act_pause.setChecked(bool(self.settings.get('paused'))); self.act_pause.toggled.connect(self.set_paused)
+        self.act_sheet = QAction(style.standardIcon(QStyle.SP_FileDialogListView), 'Add from a sheet…', self)
+        self.act_sheet.setToolTip('A CSV with the columns file, date, time, caption, first_comment, alt_text, target'); self.act_sheet.triggered.connect(self.add_sheet)
         self.act_settings = QAction(style.standardIcon(QStyle.SP_FileDialogDetailedView), 'Settings…', self)
         self.act_settings.setShortcut(QKeySequence.Preferences if cfg.MAC else 'Ctrl+,'); self.act_settings.triggered.connect(self.open_settings)
         self.act_quit = QAction('Quit PostQueue', self); self.act_quit.setShortcut(QKeySequence.Quit if cfg.MAC else 'Ctrl+Q'); self.act_quit.triggered.connect(self.quit)
         self.act_quit.setMenuRole(QAction.QuitRole)
-        for act in (self.act_add, self.act_pause, self.act_settings): bar.addAction(act)
+        for act in (self.act_add, self.act_sheet, self.act_pause, self.act_settings): bar.addAction(act)
         spacer = QWidget(); spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred); bar.addWidget(spacer)
         self.account_label = QLabel(''); self.account_label.setContentsMargins(8, 0, 8, 0); bar.addWidget(self.account_label)
         self.addAction(self.act_quit)
@@ -848,7 +864,7 @@ class MainWindow(QMainWindow):
         split.addWidget(left)
 
         self.detail = QWidget(); self.detail.setObjectName('detail'); dl = QVBoxLayout(self.detail); dl.setContentsMargins(4, 0, 0, 0)
-        self.preview = PreviewLabel(); self.preview.setStyleSheet('background: #1f1f23; border-radius: 6px;')
+        self.preview = PreviewLabel(); self.preview.setStyleSheet('background: #1f1f23; border-radius: 6px;'); self.preview.setMinimumHeight(220); self.preview.setMaximumHeight(360)
         dl.addWidget(self.preview, 1)
         self.name_label = QLabel(''); self.name_label.setObjectName('name'); self.name_label.setWordWrap(True); dl.addWidget(self.name_label)
         self.media_info = QLabel(''); self.media_info.setObjectName('media_info'); self.media_info.setWordWrap(True); self.media_info.setStyleSheet(MUTED_STYLE); dl.addWidget(self.media_info)
@@ -866,19 +882,44 @@ class MainWindow(QMainWindow):
         self.fit_combo = QComboBox(); self.fit_combo.setObjectName('fit'); self.fit_combo.addItem('Crop to fit Instagram', 'crop'); self.fit_combo.addItem('Add white borders', 'pad')
         self.fit_combo.setToolTip('Instagram accepts photos between 4:5 (portrait) and 1.91:1 (landscape). Photos outside that range are cropped or padded.')
         self.fit_combo.currentIndexChanged.connect(self.fit_changed); form.addRow('If the shape is off', self.fit_combo); self.fit_label = form.labelForField(self.fit_combo)
+        self.target_combo = QComboBox(); self.target_combo.setObjectName('target'); self.target_combo.addItem('Feed post', 'feed'); self.target_combo.addItem('Story (gone after 24 hours, no caption)', 'story')
+        self.target_combo.currentIndexChanged.connect(self.target_changed); form.addRow('Post as', self.target_combo); self.target_label = form.labelForField(self.target_combo)
+        # The photos and videos in this post: one for a plain post, two to ten for a carousel
+        items_box = QWidget(); ib = QVBoxLayout(items_box); ib.setContentsMargins(0, 0, 0, 0); ib.setSpacing(4)
+        self.items_list = QListWidget(); self.items_list.setObjectName('items'); self.items_list.setFlow(QListWidget.LeftToRight); self.items_list.setIconSize(QSize(56, 56))
+        self.items_list.setFixedHeight(84); self.items_list.setWrapping(False); self.items_list.setSelectionMode(QAbstractItemView.SingleSelection); ib.addWidget(self.items_list)
+        items_buttons = QHBoxLayout(); items_buttons.setSpacing(6)
+        self.add_item_button = QPushButton('Add another photo or video…'); self.add_item_button.setObjectName('quick'); self.add_item_button.clicked.connect(self.add_item_file)
+        self.remove_item_button = QPushButton('Remove selected'); self.remove_item_button.setObjectName('quick'); self.remove_item_button.clicked.connect(self.remove_item)
+        items_buttons.addWidget(self.add_item_button); items_buttons.addWidget(self.remove_item_button); items_buttons.addStretch(1); ib.addLayout(items_buttons)
+        form.addRow('In this post', items_box); self.items_box = items_box; self.items_label = form.labelForField(items_box)
         self.caption = QPlainTextEdit(); self.caption.setObjectName('caption'); self.caption.setAccessibleName('Caption'); self.caption.setPlaceholderText('Caption, #hashtags and @mentions')
         self.caption.setMaximumHeight(140); self.caption.textChanged.connect(self.caption_changed); form.addRow('Caption', self.caption)
         self.caption_info = QLabel(''); self.caption_info.setStyleSheet(MUTED_STYLE); form.addRow('', self.caption_info)
+        self.first_comment = QLineEdit(); self.first_comment.setObjectName('first_comment'); self.first_comment.setPlaceholderText('Posted as the first comment, right after publishing (hashtags go well here)')
+        self.first_comment.textChanged.connect(self.mark_dirty); form.addRow('First comment', self.first_comment); self.first_comment_label = form.labelForField(self.first_comment)
+        self.alt_text = QLineEdit(); self.alt_text.setObjectName('alt_text'); self.alt_text.setPlaceholderText('What the photo shows, for people who cannot see it')
+        self.alt_text.textChanged.connect(self.mark_dirty); form.addRow('Alt text', self.alt_text); self.alt_text_label = form.labelForField(self.alt_text)
+        self.cover_spin = QDoubleSpinBox(); self.cover_spin.setObjectName('cover'); self.cover_spin.setRange(0, 900); self.cover_spin.setDecimals(1); self.cover_spin.setSuffix(' s')
+        self.cover_spin.setToolTip('Which moment of the video becomes its cover picture'); self.cover_spin.valueChanged.connect(self.mark_dirty)
+        form.addRow('Cover at', self.cover_spin); self.cover_label = form.labelForField(self.cover_spin)
         self.status_label = QLabel(''); self.status_label.setWordWrap(True); self.status_label.setTextInteractionFlags(Qt.TextSelectableByMouse); dl.addWidget(self.status_label)
         buttons = QHBoxLayout(); dl.addLayout(buttons)
         self.save_button = QPushButton('Save changes'); self.save_button.setObjectName('save'); self.save_button.setShortcut(QKeySequence.Save); self.save_button.clicked.connect(self.save_current)
         self.post_now_button = QPushButton('Post now'); self.post_now_button.setObjectName('post_now'); self.post_now_button.clicked.connect(self.post_now)
         self.open_button = QPushButton('Open on Instagram'); self.open_button.clicked.connect(self.open_permalink)
+        self.duplicate_button = QPushButton('Duplicate'); self.duplicate_button.setObjectName('duplicate'); self.duplicate_button.setToolTip('A copy of this post, scheduled for the next free slot'); self.duplicate_button.clicked.connect(self.duplicate_current)
         self.remove_button = QPushButton('Remove'); self.remove_button.setObjectName('remove'); self.remove_button.clicked.connect(self.remove_selected)
-        for b in (self.save_button, self.post_now_button, self.open_button, self.remove_button): buttons.addWidget(b)
+        for b in (self.save_button, self.post_now_button, self.open_button): buttons.addWidget(b)
         buttons.addStretch(1)
+        more = QHBoxLayout(); dl.addLayout(more)
+        self.draft_box = QCheckBox('Draft: keep, do not post yet'); self.draft_box.setObjectName('draft'); self.draft_box.toggled.connect(self.mark_dirty)
+        for b in (self.duplicate_button, self.remove_button): more.addWidget(b)
+        more.addWidget(self.draft_box); more.addStretch(1)
         self.detail.setMinimumWidth(380); left.setMinimumWidth(360)
-        split.addWidget(self.detail); split.setStretchFactor(0, 1); split.setStretchFactor(1, 1); split.setSizes([540, 500])
+        scroll = QScrollArea(); scroll.setWidgetResizable(True); scroll.setFrameShape(QFrame.NoFrame); scroll.setWidget(self.detail); scroll.setObjectName('detail_scroll')
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff); scroll.setMinimumWidth(400)
+        split.addWidget(scroll); split.setStretchFactor(0, 1); split.setStretchFactor(1, 1); split.setSizes([540, 520])
         self.setCentralWidget(central)
 
         self.progress = QProgressBar(); self.progress.setRange(0, 100); self.progress.setFixedWidth(160); self.progress.hide()
@@ -905,7 +946,7 @@ class MainWindow(QMainWindow):
     def refresh(self):
         selected = {i.data(0, Qt.UserRole) for i in self.tree.selectedItems()} or ({self.current.id} if self.current else set())
         self.tree.blockSignals(True); self.tree.clear()
-        order = {'posting': 0, 'queued': 1, 'missed': 2, 'failed': 3, 'posted': 4}
+        order = {'posting': 0, 'queued': 1, 'missed': 2, 'failed': 3, 'draft': 4, 'posted': 5}
         for post in sorted(self.engine.posts, key=lambda p: (order.get(p.status, 9), p.when if p.status != 'posted' else '')):
             item = QTreeWidgetItem(['', post.name(), post.when_dt().strftime('%a %d %b %Y  %H:%M'), post.status_text()])
             item.setData(0, Qt.UserRole, post.id); item.setIcon(0, QIcon(self.thumb(post))); item.setSizeHint(0, QSize(72, 68))
@@ -939,26 +980,78 @@ class MainWindow(QMainWindow):
         self.detail.setEnabled(post is not None)
         if post is None:
             self.preview.set_source(None); self.name_label.setText(''); self.media_info.setText(''); self.status_label.setText('')
-            self.caption.blockSignals(True); self.caption.clear(); self.caption.blockSignals(False); self.caption_info.setText('')
-            for b in (self.save_button, self.post_now_button, self.open_button, self.remove_button): b.setVisible(False)
+            self.caption.blockSignals(True); self.caption.clear(); self.caption.blockSignals(False); self.caption_info.setText(''); self.items_list.clear()
+            for b in (self.save_button, self.post_now_button, self.open_button, self.duplicate_button, self.remove_button, self.draft_box): b.setVisible(False)
             return
-        self.preview.set_source(thumbnail(post.media, post.kind, 800))
-        self.name_label.setText(f'{post.name()}  ({"video" if post.kind == "video" else "photo"})')
-        for w in (self.when_edit, self.fit_combo, self.caption): w.blockSignals(True)
+        self.preview.set_source(thumbnail(post.media, 'image' if post.kind == 'carousel' and eng.media_kind(post.media) == 'image' else post.kind, 800))
+        self.name_label.setText(f'{post.name()}  ({post.type_text()})')
+        fields = (self.when_edit, self.fit_combo, self.caption, self.target_combo, self.first_comment, self.alt_text, self.cover_spin, self.draft_box)
+        for w in fields: w.blockSignals(True)
         self.when_edit.setDateTime(to_qdt(post.when_dt())); self.fit_combo.setCurrentIndex(max(0, self.fit_combo.findData(post.fit)))
-        self.caption.setPlainText(post.caption)
-        for w in (self.when_edit, self.fit_combo, self.caption): w.blockSignals(False)
-        self.fit_combo.setVisible(post.kind == 'image'); self.fit_label.setVisible(post.kind == 'image'); self.update_caption_info(); self.update_preview()
-        editable = post.status in ('queued', 'failed', 'missed')
-        self.when_edit.setEnabled(editable); self.caption.setEnabled(editable); self.fit_combo.setEnabled(editable)
+        self.target_combo.setCurrentIndex(max(0, self.target_combo.findData(post.target))); self.caption.setPlainText(post.caption)
+        self.first_comment.setText(post.first_comment); self.alt_text.setText(post.alt_text); self.cover_spin.setValue(float(post.cover_seconds or 0)); self.draft_box.setChecked(post.status == 'draft')
+        for w in fields: w.blockSignals(False)
+        self.fill_items(post); self.apply_kind_visibility(post); self.update_caption_info(); self.update_preview()
+        editable = post.status in ('queued', 'failed', 'missed', 'draft')
+        for w in (self.when_edit, self.fit_combo, self.target_combo, self.first_comment, self.alt_text, self.cover_spin, self.add_item_button, self.remove_item_button, self.draft_box): w.setEnabled(editable)
+        self.caption.setEnabled(editable and post.target != 'story')
         text = post.status_text()
         if post.status == 'posted' and post.posted_at: text += f' on {eng.parse_when(post.posted_at):%a %d %b %Y at %H:%M}'
+        if post.status == 'draft': text += ': kept, not scheduled. Untick Draft and save to schedule it.'
         if post.error: text += f'\n{post.error}'
+        if post.status == 'posted' and post.warning: text += f'\n{post.warning}'
         if post.status in ('failed', 'missed'): text += '\nChange the time and save to schedule it again, or use Post now.'
         self.status_label.setText(text); self.status_label.setStyleSheet(f'color: {STATUS_COLOR.get(post.status) or "palette(text)"};')
         self.save_button.setVisible(editable); self.post_now_button.setVisible(editable); self.post_now_button.setEnabled(self.worker is None)
-        self.open_button.setVisible(bool(post.permalink)); self.remove_button.setVisible(post.status != 'posting')
+        self.open_button.setVisible(bool(post.permalink)); self.remove_button.setVisible(post.status != 'posting'); self.duplicate_button.setVisible(post.status != 'posting'); self.draft_box.setVisible(editable)
         self.save_button.setEnabled(False)
+
+    def fill_items(self, post):
+        self.items_list.clear()
+        for n, item in enumerate(post.media_items()):
+            kind = eng.media_kind(item) if Path(item).suffix else 'image'
+            entry = QListWidgetItem(QIcon(thumbnail(item, kind, 56)), ''); entry.setToolTip((post.sources[n] if n < len(post.sources) else Path(item).name)); self.items_list.addItem(entry)
+
+    def apply_kind_visibility(self, post):
+        story, image, video, carousel = post.target == 'story', post.kind == 'image', post.kind == 'video', post.kind == 'carousel'
+        for w in (self.fit_combo, self.fit_label): w.setVisible((image or carousel) and True)
+        for w in (self.target_combo, self.target_label): w.setVisible(not carousel)
+        for w in (self.items_box, self.items_label): w.setVisible(not story)
+        for w in (self.first_comment, self.first_comment_label): w.setVisible(not story)
+        for w in (self.alt_text, self.alt_text_label): w.setVisible(image and not story)
+        for w in (self.cover_spin, self.cover_label): w.setVisible(video and not story)
+        self.caption.setPlaceholderText('Stories have no caption' if story else 'Caption, #hashtags and @mentions')
+
+    def target_changed(self, *_):
+        if self.current and self.detail.isEnabled():
+            self.current.target = self.target_combo.currentData() or 'feed'   # shown at once; saved with Save changes
+            self.apply_kind_visibility(self.current); self.caption.setEnabled(self.current.target != 'story'); self.update_preview(); self.mark_dirty()
+
+    def add_item_file(self):
+        if not self.current: return
+        path, _ = QFileDialog.getOpenFileName(self, 'Add a photo or video to this post', str(Path.home() / 'Pictures'), FILE_FILTER)
+        if path: self.add_item_path(path)
+
+    def add_item_path(self, path):
+        try: self.engine.add_item(self.current, path)
+        except (eng.EngineError, OSError) as exc: QMessageBox.warning(self, PRODUCT, str(exc)); return
+        self.thumbs.pop(self.current.id, None); self.refresh(); self.statusBar().showMessage(f'{self.current.name()} is now a carousel of {len(self.current.items)}.', 6000)
+
+    def remove_item(self):
+        if not self.current or self.items_list.currentRow() < 0: return
+        try: self.engine.remove_item(self.current, self.items_list.currentRow())
+        except eng.EngineError as exc: QMessageBox.warning(self, PRODUCT, str(exc)); return
+        self.thumbs.pop(self.current.id, None); self.refresh()
+
+    def duplicate_current(self):
+        if not self.current: return
+        copy = self.engine.duplicate(self.current); self.refresh(); self.select_post(copy)
+        self.statusBar().showMessage(f'Copied as a new post on {copy.when_dt():%a %d %b at %H:%M}.', 6000)
+
+    def select_post(self, post):
+        self.tree.clearSelection()
+        for i in range(self.tree.topLevelItemCount()):
+            if self.tree.topLevelItem(i).data(0, Qt.UserRole) == post.id: self.tree.topLevelItem(i).setSelected(True); self.tree.scrollToItem(self.tree.topLevelItem(i))
 
     def mark_dirty(self, *_):
         if self.current and self.detail.isEnabled(): self.dirty = True; self.save_button.setEnabled(True)
@@ -971,16 +1064,20 @@ class MainWindow(QMainWindow):
         the chosen fit gives; for a video, its length and size, or the warning from when it was added."""
         post, pm = self.current, self.preview.source
         if not post or pm is None: self.media_info.setText(''); return
-        if post.kind == 'video':
+        story = post.target == 'story'
+        if post.kind == 'video' or (post.kind == 'carousel' and eng.media_kind(post.media) == 'video'):
             if post.id not in self.video_infos: self.video_infos[post.id] = eng.video_info(post.media)
             summary = eng.video_summary(self.video_infos[post.id])
-            self.media_info.setText(post.warning or (f'Video · {summary} · posted as a Reel' if summary else 'Posted as a Reel'))
+            what = 'posted as a story' if story else 'posted as a Reel'
+            self.media_info.setText(post.warning or (f'Video · {summary} · {what}' if summary else f'Video · {what}'))
             self.media_info.setStyleSheet(WARN_STYLE if post.warning else MUTED_STYLE); self.preview.set_box(None); return
-        fit = self.fit_combo.currentData() or 'crop'; box = eng.target_box(pm.width(), pm.height(), fit); self.preview.set_box(box)
+        fit = self.fit_combo.currentData() or 'crop'
+        box = eng.target_box(pm.width(), pm.height(), fit, eng.STORY_RATIO, eng.STORY_RATIO) if story else eng.target_box(pm.width(), pm.height(), fit); self.preview.set_box(box)
         whole = box == (0, 0, pm.width(), pm.height()); tall = pm.height() > pm.width()
-        if whole: text = 'Photo · within Instagram\'s shape range, posted whole'
-        elif fit == 'crop': text = f'Photo · the dimmed {"top and bottom" if tall else "sides"} will be cropped off'
-        else: text = f'Photo · white borders will be added {"at the sides" if tall else "above and below"}'
+        noun = 'Story · 9:16' if story else ('Carousel · first photo' if post.kind == 'carousel' else 'Photo')
+        if whole: text = f'{noun} · within Instagram\'s shape range, posted whole'
+        elif fit == 'crop': text = f'{noun} · the dimmed {"top and bottom" if tall else "sides"} will be cropped off'
+        else: text = f'{noun} · white borders will be added {"at the sides" if tall else "above and below"}'
         self.media_info.setText(text); self.media_info.setStyleSheet(MUTED_STYLE)
 
     def update_caption_info(self):
@@ -988,10 +1085,17 @@ class MainWindow(QMainWindow):
         self.caption_info.setText(' '.join(warnings) if warnings else f'{len(text)} of {eng.CAPTION_LIMIT} characters')
         self.caption_info.setStyleSheet(BAD_STYLE if warnings else MUTED_STYLE)
 
+    def save_fields(self):
+        """Copy what is in the details pane into the current post (everything but the time and status)."""
+        self.engine.update(self.current, caption=self.caption.toPlainText(), fit=self.fit_combo.currentData() or 'crop', target=self.target_combo.currentData() or 'feed',
+                           first_comment=self.first_comment.text().strip(), alt_text=self.alt_text.text().strip(), cover_seconds=float(self.cover_spin.value()))
+
     def save_current(self):
         if not self.current: return
-        when = from_qdt(self.when_edit.dateTime())
-        self.engine.update(self.current, caption=self.caption.toPlainText(), fit=self.fit_combo.currentData() or 'crop')
+        when = from_qdt(self.when_edit.dateTime()); self.save_fields()
+        if self.draft_box.isChecked():
+            self.engine.update(self.current, status='draft', when=eng.fmt_when(when), error='', retry_at='', attempts=0)
+            self.dirty = False; self.refresh(); self.statusBar().showMessage(f'Saved as a draft. {self.current.name()} will not post until you untick Draft.', 5000); return
         if self.current.status != 'queued' or eng.fmt_when(when) != self.current.when: self.engine.reschedule(self.current, when)
         self.dirty = False; self.refresh(); self.statusBar().showMessage(f'Saved. {self.current.name()} will post on {when:%a %d %b at %H:%M}.', 5000)
 
@@ -1011,19 +1115,47 @@ class MainWindow(QMainWindow):
         files, _ = QFileDialog.getOpenFileNames(self, 'Add photos or videos', str(Path.home() / 'Pictures'), FILE_FILTER)
         if files: self.add_paths(files)
 
-    def add_paths(self, paths):
-        added, problems = [], []
-        for path in paths:
-            try: added.append(self.engine.add(path, self.engine.next_slot()))
-            except eng.EngineError as exc: problems.append(str(exc))
-            except OSError as exc: problems.append(f'{Path(path).name}: {exc.strerror or exc}')
+    def ask_how_to_add(self, count):
+        """Several files at once: one post each, or all of them in one carousel post."""
+        box = QMessageBox(self); box.setWindowTitle(PRODUCT); box.setText(f'{count} files. How should they be posted?')
+        box.setInformativeText('One carousel post shows them together, swiped through; up to 10.')
+        each = box.addButton('One post each', QMessageBox.AcceptRole); together = box.addButton('One carousel post', QMessageBox.ActionRole); box.addButton(QMessageBox.Cancel)
+        box.setDefaultButton(each); box.exec()
+        return 'each' if box.clickedButton() is each else 'carousel' if box.clickedButton() is together else None
+
+    def add_paths(self, paths, mode=None):
+        """Add files as posts. `mode`: 'each' (default for one file), 'carousel', or None to ask when there are several."""
+        paths = list(paths); added, problems = [], []
+        if len(paths) > 1 and mode is None: mode = self.ask_how_to_add(len(paths))
+        if mode is None and len(paths) > 1: return []
+        if mode == 'carousel':
+            try: added.append(self.engine.add_carousel(paths[:eng.CAROUSEL_MAX], self.engine.next_slot()))
+            except (eng.EngineError, OSError) as exc: problems.append(str(exc))
+            if len(paths) > eng.CAROUSEL_MAX: problems.append(f'Only the first {eng.CAROUSEL_MAX} files went into the carousel; the rest were left out.')
+        else:
+            for path in paths:
+                try: added.append(self.engine.add(path, self.engine.next_slot()))
+                except eng.EngineError as exc: problems.append(str(exc))
+                except OSError as exc: problems.append(f'{Path(path).name}: {exc.strerror or exc}')
         self.refresh()
         if added:
-            self.tree.clearSelection()
-            for i in range(self.tree.topLevelItemCount()):
-                if self.tree.topLevelItem(i).data(0, Qt.UserRole) == added[-1].id: self.tree.topLevelItem(i).setSelected(True); self.tree.scrollToItem(self.tree.topLevelItem(i))
+            self.select_post(added[-1])
             self.statusBar().showMessage(f'Added {len(added)} post{"s" if len(added) > 1 else ""}. Pick the date and time on the right, then Save changes.', 8000)
         if problems: QMessageBox.warning(self, PRODUCT, '\n'.join(problems))
+        return added
+
+    def add_sheet(self):
+        path, _ = QFileDialog.getOpenFileName(self, 'Add posts from a sheet', str(Path.home()), 'Sheets (*.csv);;All files (*)')
+        if path: self.add_sheet_path(path)
+
+    def add_sheet_path(self, path):
+        try: added, problems = self.engine.import_sheet(path)
+        except (OSError, UnicodeDecodeError) as exc: QMessageBox.warning(self, PRODUCT, f'Could not read the sheet: {exc}'); return []
+        self.refresh()
+        if added: self.select_post(added[-1])
+        summary = f'Added {len(added)} post{"s" if len(added) != 1 else ""} from {Path(path).name}.'
+        if problems: QMessageBox.warning(self, PRODUCT, summary + '\n\nNot added:\n' + '\n'.join(problems))
+        else: self.statusBar().showMessage(summary, 8000)
         return added
 
     def dragEnterEvent(self, event):
@@ -1061,7 +1193,7 @@ class MainWindow(QMainWindow):
     def post_now(self):
         if not self.current or self.worker is not None: return
         if QMessageBox.question(self, PRODUCT, f'Post {self.current.name()} to Instagram now?', QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes: return
-        if self.dirty: self.engine.update(self.current, caption=self.caption.toPlainText(), fit=self.fit_combo.currentData() or 'crop'); self.dirty = False
+        if self.dirty: self.save_fields(); self.dirty = False
         self.engine.reschedule(self.current, eng.now_local()); self.start_publish(self.current)
 
     def start_publish(self, post):
@@ -1094,12 +1226,24 @@ class MainWindow(QMainWindow):
         ok = post.status == 'posted'
         if ok:
             when = eng.parse_when(post.posted_at) if post.posted_at else eng.now_local()
-            self.result_text.setText(f'✓ Posted {post.name()} to Instagram at {when:%H:%M} on {when:%a %d %b}.'); self.result_url = post.permalink
+            self.result_text.setText(f'✓ Posted {post.name()} to Instagram at {when:%H:%M} on {when:%a %d %b}.' + (f' {post.warning}' if post.warning else '')); self.result_url = post.permalink
         else:
             self.result_text.setText(f'✗ Could not post {post.name()}: {post.error}'); self.result_url = ''
-        self.result_open.setVisible(bool(self.result_url))
-        self.result.setProperty('ok', 'true' if ok else 'false'); self.result.style().unpolish(self.result); self.result.style().polish(self.result)
-        self.result.show()
+        self.result_open.setText('Open on Instagram'); self.result_open.setVisible(bool(self.result_url))
+        self.show_strip('true' if ok else 'false')
+
+    def show_strip(self, state):
+        self.result.setProperty('ok', state); self.result.style().unpolish(self.result); self.result.style().polish(self.result); self.result.show()
+
+    def check_update(self):
+        """Once a day at most: is there a newer release on GitHub? Quiet unless there is."""
+        task = Task(lambda: eng.check_for_update(VERSION))
+        def found(result):
+            if not result or self.result.isVisible(): return
+            tag, url = result
+            self.result_text.setText(f'PostQueue {tag.lstrip("v")} is available. You have {VERSION}.'); self.result_url = url
+            self.result_open.setText('Download'); self.result_open.setVisible(bool(url)); self.show_strip('update')
+        task.done.connect(found); task.start(); self.update_task = task
 
     def update_next(self):
         if self.settings.get('paused'): self.next_label.setText('Posting is paused'); return

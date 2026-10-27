@@ -58,12 +58,20 @@ class FakeInstagram:
     """Records calls; `statuses` drives the video processing poll."""
     def __init__(self, statuses=('IN_PROGRESS', 'FINISHED'), fail=None):
         self.calls, self.statuses, self.fail = [], list(statuses), fail
-    def create_image(self, url, caption=''):
-        self.calls.append(('create_image', url, caption))
+    def create_image(self, url, caption='', alt_text='', carousel_item=False):
+        self.calls.append(('create_image', url, caption) if not (alt_text or carousel_item) else ('create_image', url, caption, alt_text, carousel_item))
         if self.fail == 'create': raise ig.InstagramError('Media not fetched', code=9004)
         if self.fail == 'rate': raise ig.InstagramError('Application request limit reached', code=4)
-        return 'C1'
-    def create_video(self, url, caption='', share_to_feed=True): self.calls.append(('create_video', url, caption)); return 'C2'
+        return f'C1-{len(self.calls)}' if carousel_item else 'C1'
+    def create_video(self, url, caption='', share_to_feed=True, cover_offset_ms=None, carousel_item=False):
+        self.calls.append(('create_video', url, caption) if not (cover_offset_ms or carousel_item) else ('create_video', url, caption, cover_offset_ms, carousel_item))
+        return f'C2-{len(self.calls)}' if carousel_item else 'C2'
+    def create_story(self, url, video=False): self.calls.append(('create_story', url, video)); return 'S1'
+    def create_carousel(self, children, caption=''): self.calls.append(('create_carousel', list(children), caption)); return 'CAR'
+    def comment(self, media_id, text):
+        self.calls.append(('comment', media_id, text))
+        if self.fail == 'comment': raise ig.InstagramError('Comments are off for this post', code=100)
+        return 'K1'
     def wait_container(self, cid, timeout=900, interval=5, on_progress=None, sleep=None):
         for s in self.statuses:
             if s == 'FINISHED': return
@@ -233,8 +241,8 @@ def test_publish_photo_end_to_end(engine, tmp_path, now):
     insta, host, steps = FakeInstagram(), FakeProvider(), []
     engine.publish(post, insta, host, lambda f, t: steps.append((f, t)))
     assert post.status == 'posted' and post.media_id == '1789' and post.permalink.endswith('/1789/') and post.posted_at
-    assert host.uploaded[0][0] == f'{post.id}.jpg' and host.uploaded[0][1] == 'image' and host.deleted == [('h1', 'image')]
-    assert insta.calls[0] == ('create_image', f'https://host.example/{post.id}.jpg', 'Hello') and insta.calls[1] == ('publish', 'C1')
+    assert host.uploaded[0][0] == f'{post.id}-1.jpg' and host.uploaded[0][1] == 'image' and host.deleted == [('h1', 'image')]
+    assert insta.calls[0] == ('create_image', f'https://host.example/{post.id}-1.jpg', 'Hello') and insta.calls[1] == ('publish', 'C1')
     assert not list(engine.tmp_dir.iterdir()) and steps[-1] == (1.0, 'Posted') and steps[0][0] < steps[-1][0]
     assert Engine(engine.dir).get(post.id).status == 'posted'
 
@@ -267,6 +275,89 @@ def test_permanent_failure_explains(engine, tmp_path, now):
     post = engine.add(make_image(tmp_path / 'a.jpg'), now); host = FakeProvider()
     engine.publish(post, FakeInstagram(fail='create'), host)
     assert post.status == 'failed' and 'could not fetch the media' in post.error and host.deleted == [('h1', 'image')]
+
+
+def test_carousel_add_publish_and_cleanup(engine, tmp_path, now):
+    files = [make_image(tmp_path / f'p{i}.jpg', (1000, 1000)) for i in range(2)]; clip = tmp_path / 'c.mp4'; clip.write_bytes(b'\0' * 500)
+    post = engine.add_carousel(files + [clip], now, caption='Three in one')
+    assert post.kind == 'carousel' and len(post.items) == 3 and post.name() == 'p0.jpg +2' and post.type_text() == 'carousel of 3'
+    assert all(Path(i).exists() for i in post.items) and Path(post.items[0]).name == f'{post.id}-1.jpg' and post.media == post.items[0]
+    assert Engine(engine.dir).get(post.id).items == post.items
+    insta, host, steps = FakeInstagram(), FakeProvider(), []
+    engine.publish(post, insta, host, lambda f, t: steps.append(t))
+    assert post.status == 'posted'
+    kinds = [c[0] for c in insta.calls]
+    assert kinds == ['create_image', 'create_image', 'create_video', 'create_carousel', 'publish'] and insta.calls[0][4] is True and insta.calls[2][4] is True
+    assert insta.calls[3][1] == ['C1-1', 'C1-2', 'C2-3'] and insta.calls[3][2] == 'Three in one'
+    assert len(host.uploaded) == 3 and len(host.deleted) == 3 and not list(engine.tmp_dir.iterdir())
+    assert any('2 of 3' in s for s in steps) and any('assembling' in s for s in steps)
+    with pytest.raises(EngineError, match='2 to 10'): engine.add_carousel([files[0]], now)
+
+
+def test_carousel_items_added_and_removed(engine, tmp_path, now):
+    post = engine.add(make_image(tmp_path / 'a.jpg'), now); assert post.items == [post.media]
+    engine.add_item(post, make_image(tmp_path / 'b.jpg'))
+    assert post.kind == 'carousel' and len(post.items) == 2 and Path(post.items[1]).name == f'{post.id}-2.jpg'
+    gone = post.items[0]; engine.remove_item(post, 0)
+    assert post.kind == 'image' and len(post.items) == 1 and post.media == post.items[0] and not Path(gone).exists() and post.name() == 'b.jpg'
+    with pytest.raises(EngineError, match='at least one'): engine.remove_item(post, 0)
+    story = engine.add(make_image(tmp_path / 's.jpg'), now, target='story')
+    with pytest.raises(EngineError, match='story holds one'): engine.add_item(story, tmp_path / 'a.jpg')
+    for i in range(9): engine.add_item(post, make_image(tmp_path / f'x{i}.jpg'))
+    with pytest.raises(EngineError, match='at most 10'): engine.add_item(post, tmp_path / 'a.jpg')
+    engine.remove(post); assert not any(Path(i).exists() for i in post.items)
+
+
+def test_story_is_9_16_and_has_no_caption(engine, tmp_path, now):
+    post = engine.add(make_image(tmp_path / 'wide.jpg', (2000, 1000)), now, caption='ignored', target='story')
+    assert post.type_text() == 'story'
+    insta, host = FakeInstagram(), FakeProvider(); engine.publish(post, insta, host)
+    assert post.status == 'posted' and insta.calls[0] == ('create_story', f'https://host.example/{post.id}-1.jpg', False) and insta.calls[1] == ('publish', 'S1')
+    out = Engine.prepare_image(tmp_path / 'wide.jpg', tmp_path / 'story.jpg', 'crop', story=True)
+    with Image.open(out) as im: assert abs(im.width / im.height - 9 / 16) < 0.01
+    clip = tmp_path / 'c.mp4'; clip.write_bytes(b'\0' * 10); video = engine.add(clip, now, target='story')
+    insta = FakeInstagram(); engine.publish(video, insta, FakeProvider())
+    assert insta.calls[0][0] == 'create_story' and insta.calls[0][2] is True and video.status == 'posted'
+
+
+def test_first_comment_alt_text_and_cover(engine, tmp_path, now):
+    post = engine.add(make_image(tmp_path / 'a.jpg'), now, caption='Cap'); engine.update(post, first_comment='#tags #here', alt_text='A red square')
+    insta = FakeInstagram(); engine.publish(post, insta, FakeProvider())
+    assert insta.calls[0] == ('create_image', f'https://host.example/{post.id}-1.jpg', 'Cap', 'A red square', False)
+    assert insta.calls[-1] == ('comment', '1789', '#tags #here') and post.status == 'posted' and not post.warning
+    clip = tmp_path / 'c.mp4'; clip.write_bytes(b'\0' * 10); video = engine.add(clip, now); engine.update(video, cover_seconds=2.5, first_comment='hi')
+    insta = FakeInstagram(fail='comment'); engine.publish(video, insta, FakeProvider())
+    assert insta.calls[0][3] == 2500 and video.status == 'posted' and 'first comment could not be added' in video.warning
+
+
+def test_drafts_wait_and_duplicate_copies(engine, tmp_path, now):
+    post = engine.add(make_image(tmp_path / 'a.jpg'), now - dt.timedelta(minutes=1), caption='c'); engine.update(post, status='draft', alt_text='alt')
+    assert engine.check(now) is None and engine.next_scheduled(now) is None and post.status_text() == 'Draft'
+    copy = engine.duplicate(post)
+    assert copy.id != post.id and copy.caption == 'c' and copy.alt_text == 'alt' and copy.status == 'queued' and copy.when_dt() == engine.next_slot(now) or copy.when_dt() > now
+    assert Path(copy.media).exists() and copy.media != post.media and copy.items == [copy.media]
+    engine.reschedule(post, now); assert engine.check(now) is post
+
+
+def test_import_sheet(engine, tmp_path):
+    make_image(tmp_path / 'one.jpg'); make_image(tmp_path / 'two.jpg'); make_image(tmp_path / 'three.jpg')
+    (tmp_path / 'plan.csv').write_text('file,date,time,caption,first_comment,alt_text,target\n'
+                                       'one.jpg,2027-03-04,18:30,Hello,#a #b,An image,\n'
+                                       'two.jpg|three.jpg,2027-03-05,,Pair,,,\n'
+                                       'missing.jpg,2027-03-06,09:00,,,,\n'
+                                       'one.jpg,,,Story,,,story\n', encoding='utf-8')
+    added, problems = engine.import_sheet(tmp_path / 'plan.csv')
+    assert [p.caption for p in added] == ['Hello', 'Pair', 'Story'] and len(problems) == 1 and 'Row 4' in problems[0] and 'not found' in problems[0]
+    assert added[0].when_dt().hour == 18 and added[0].first_comment == '#a #b' and added[0].alt_text == 'An image'
+    assert added[1].kind == 'carousel' and added[1].when_dt().hour == 9 and added[2].target == 'story'
+
+
+def test_update_check():
+    assert eng.version_tuple('v1.1.0') > eng.version_tuple('1.1.0-rc1') > eng.version_tuple('1.0.0') and eng.version_tuple('v1.0.0-rc1') > eng.version_tuple('1.0.0-rc0')
+    assert eng.check_for_update('1.0.0', fetch=lambda: {'tag_name': 'v1.1.0', 'html_url': 'https://x/r'}) == ('v1.1.0', 'https://x/r')
+    assert eng.check_for_update('1.1.0', fetch=lambda: {'tag_name': 'v1.1.0', 'html_url': 'u'}) is None
+    assert eng.check_for_update('1.0.0', fetch=lambda: {'tag_name': 'v2.0.0', 'draft': True}) is None
+    assert eng.check_for_update('1.0.0', fetch=lambda: (_ for _ in ()).throw(OSError('offline'))) is None
 
 
 def test_publish_without_setup_fails_clearly(engine, tmp_path, now):
@@ -525,7 +616,15 @@ def test_publish_calls(monkeypatch):
     api = ig.Instagram('tok', '17841400000', ig.FB_HOST, 'v25.0')
     assert api.create_image('https://h/x.jpg', 'Hi #x') == 'C9'
     assert sent[0][0] == 'POST' and sent[0][1] == 'https://graph.facebook.com/v25.0/17841400000/media' and b'image_url=https%3A%2F%2Fh%2Fx.jpg' in sent[0][2] and b'caption=Hi+%23x' in sent[0][2]
-    assert api.create_video('https://h/v.mp4') == 'C9' and b'media_type=REELS' in sent[1][2] and b'share_to_feed=true' in sent[1][2]
+    assert api.create_video('https://h/v.mp4') == 'C9' and b'media_type=REELS' in sent[1][2] and b'share_to_feed=true' in sent[1][2] and b'thumb_offset' not in sent[1][2]
+    api.create_image('https://h/x.jpg', 'Hi', alt_text='A cat'); assert b'alt_text=A+cat' in sent[-1][2]
+    api.create_image('https://h/x.jpg', carousel_item=True); assert b'is_carousel_item=true' in sent[-1][2] and b'caption' not in sent[-1][2]
+    api.create_video('https://h/v.mp4', cover_offset_ms=2500); assert b'thumb_offset=2500' in sent[-1][2]
+    api.create_video('https://h/v.mp4', carousel_item=True); assert b'media_type=VIDEO' in sent[-1][2] and b'is_carousel_item=true' in sent[-1][2]
+    api.create_story('https://h/s.jpg'); assert b'media_type=STORIES' in sent[-1][2] and b'image_url=' in sent[-1][2]
+    api.create_story('https://h/s.mp4', video=True); assert b'video_url=' in sent[-1][2]
+    api.create_carousel(['A', 'B'], 'Cap'); assert b'media_type=CAROUSEL' in sent[-1][2] and b'children=A%2CB' in sent[-1][2]
+    api.comment('17', 'First!'); assert sent[-1][1].endswith('/17/comments') and b'message=First%21' in sent[-1][2]
     api.wait_container('C9', sleep=lambda s: None)
     assert api.publish('C9') == 'C9' and b'creation_id=C9' in sent[-1][2]
     assert api.permalink('C9') == 'https://www.instagram.com/p/abc/'

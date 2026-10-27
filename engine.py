@@ -9,8 +9,9 @@ import re
 import shutil
 import struct
 import urllib.error
+import urllib.request
 import uuid
-from dataclasses import dataclass, asdict, fields
+from dataclasses import dataclass, asdict, field, fields
 from pathlib import Path
 
 from hosting import HostingError
@@ -27,7 +28,10 @@ MIN_VIDEO_SECONDS, MAX_VIDEO_SECONDS = 3, 15 * 60   # Instagram Reels
 REEL_MIN_RATIO, REEL_MAX_RATIO = 0.5, 1.2          # about 9:16 to just past square; outside that, warn about black bars
 CAPTION_LIMIT, HASHTAG_LIMIT = 2200, 30
 RETRY_LIMIT, RETRY_MINUTES = 3, 5
-STATUS_TEXT = {'queued': 'Scheduled', 'posting': 'Posting…', 'posted': 'Posted', 'failed': 'Failed', 'missed': 'Missed'}
+STATUS_TEXT = {'queued': 'Scheduled', 'posting': 'Posting…', 'posted': 'Posted', 'failed': 'Failed', 'missed': 'Missed', 'draft': 'Draft'}
+CAROUSEL_MAX = 10
+STORY_RATIO = 9 / 16
+RELEASES_API = 'https://api.github.com/repos/DoipSter/PostQueue/releases/latest'
 
 
 class EngineError(Exception):
@@ -55,13 +59,13 @@ def caption_warnings(caption):
     return out
 
 
-def target_box(width, height, fit='crop'):
+def target_box(width, height, fit='crop', lo=MIN_RATIO, hi=MAX_RATIO):
     """The part of a width x height picture that ends up on Instagram, as (left, top, right, bottom) in its own pixels.
-    Within 4:5 to 1.91:1 that is the whole picture. Outside it, 'crop' gives the centred window that is kept and 'pad'
-    a frame larger than the picture (the overhang is the white border). The preview draws this box and prepare_image
-    applies it, so the two cannot disagree."""
+    Within the allowed ratios (4:5 to 1.91:1 for the feed; exactly 9:16 for a story) that is the whole picture.
+    Outside it, 'crop' gives the centred window that is kept and 'pad' a frame larger than the picture (the overhang
+    is the white border). The preview draws this box and prepare_image applies it, so the two cannot disagree."""
     ratio = width / height
-    target = min(max(ratio, MIN_RATIO), MAX_RATIO)
+    target = min(max(ratio, lo), hi)
     if abs(target - ratio) <= 1e-3: return 0, 0, width, height
     if fit == 'crop':
         if ratio > target: nw = round(height * target); left = (width - nw) // 2; return left, 0, left + nw, height
@@ -170,12 +174,12 @@ def video_summary(info):
 @dataclass
 class Post:
     id: str
-    media: str                 # the copy in the data folder
+    media: str                 # the copy in the data folder (the first one, for a carousel)
     source: str                # the file the user chose (for the name only)
-    kind: str                  # image | video
+    kind: str                  # image | video | carousel
     when: str                  # ISO 8601 with offset
     caption: str = ''
-    status: str = 'queued'
+    status: str = 'queued'     # queued | posting | posted | failed | missed | draft
     fit: str = 'crop'          # crop | pad (photos outside Instagram's aspect-ratio range)
     warning: str = ''          # worth knowing before it posts: a video's shape, or a container that could not be read
     error: str = ''
@@ -185,10 +189,22 @@ class Post:
     permalink: str = ''
     created: str = ''
     posted_at: str = ''
+    items: list = field(default_factory=list)   # every media copy, in order (a carousel has 2 to 10)
+    sources: list = field(default_factory=list) # the chosen file names, one per item
+    target: str = 'feed'       # feed | story
+    first_comment: str = ''    # posted as the first comment right after publishing
+    alt_text: str = ''         # accessibility text for a photo
+    cover_seconds: float = 0.0 # which moment of a video becomes its cover
 
     def when_dt(self): return parse_when(self.when)
-    def name(self): return Path(self.source).name or Path(self.media).name
+    def media_items(self): return list(self.items) if self.items else [self.media]
+    def name(self):
+        first = Path(self.source).name or Path(self.media).name
+        return f'{first} +{len(self.items) - 1}' if self.kind == 'carousel' and len(self.items) > 1 else first
     def status_text(self): return STATUS_TEXT.get(self.status, self.status)
+    def type_text(self):
+        if self.target == 'story': return 'story'
+        return {'image': 'photo', 'video': 'video', 'carousel': f'carousel of {len(self.items)}'}.get(self.kind, self.kind)
 
 
 class Engine:
@@ -223,23 +239,94 @@ class Engine:
 
     def get(self, post_id): return next((p for p in self.posts if p.id == post_id), None)
 
-    def add(self, path, when, caption='', fit=None):
-        """Copy the file into the data folder and queue it. `when` is an aware datetime."""
-        src = Path(path)
+    def _check_file(self, src):
+        src = Path(src)
         if not src.is_file(): raise EngineError(f'{src.name}: file not found.')
-        kind = media_kind(src)
-        size = src.stat().st_size
+        kind = media_kind(src); size = src.stat().st_size
         if kind == 'video' and size > MAX_VIDEO_BYTES: raise EngineError(f'{src.name}: videos must be under 1 GB.')
         if size == 0: raise EngineError(f'{src.name}: the file is empty.')
-        warning = video_warnings(video_info(src), src.name) if kind == 'video' else ''
-        post_id = uuid.uuid4().hex[:12]
-        dest = self.media_dir / f'{post_id}{src.suffix.lower()}'
-        shutil.copy2(src, dest)
-        post = Post(id=post_id, media=str(dest), source=str(src), kind=kind, when=fmt_when(when), caption=caption,
-                    fit=fit or self.settings.get('fit_mode', 'crop'), warning=warning, created=fmt_when(now_local()))
+        return src, kind, (video_warnings(video_info(src), src.name) if kind == 'video' else '')
+
+    def _copy_in(self, src, post_id, index=None):
+        dest = self.media_dir / (f'{post_id}-{index}{src.suffix.lower()}' if index is not None else f'{post_id}{src.suffix.lower()}')
+        shutil.copy2(src, dest); return dest
+
+    def add(self, path, when, caption='', fit=None, target='feed'):
+        """Copy the file into the data folder and queue it. `when` is an aware datetime."""
+        src, kind, warning = self._check_file(path)
+        post_id = uuid.uuid4().hex[:12]; dest = self._copy_in(src, post_id)
+        post = Post(id=post_id, media=str(dest), source=str(src), kind=kind, when=fmt_when(when), caption=caption, target=target,
+                    fit=fit or self.settings.get('fit_mode', 'crop'), warning=warning, created=fmt_when(now_local()), items=[str(dest)], sources=[src.name])
         self.posts.append(post); self.save()
         self.log.info('queued %s for %s', post.name(), post.when)
         return post
+
+    def add_carousel(self, paths, when, caption='', fit=None):
+        """Several photos or videos as one post (2 to 10). Each file is copied in; the first one names the post."""
+        paths = list(paths)
+        if not 2 <= len(paths) <= CAROUSEL_MAX: raise EngineError(f'A carousel takes 2 to {CAROUSEL_MAX} photos or videos.')
+        checked = [self._check_file(p) for p in paths]
+        post_id = uuid.uuid4().hex[:12]
+        copies = [str(self._copy_in(src, post_id, i + 1)) for i, (src, _, _) in enumerate(checked)]
+        warning = '; '.join(w for _, _, w in checked if w)
+        post = Post(id=post_id, media=copies[0], source=str(checked[0][0]), kind='carousel', when=fmt_when(when), caption=caption,
+                    fit=fit or self.settings.get('fit_mode', 'crop'), warning=warning, created=fmt_when(now_local()), items=copies,
+                    sources=[src.name for src, _, _ in checked])
+        self.posts.append(post); self.save()
+        self.log.info('queued carousel %s (%d items) for %s', post.name(), len(copies), post.when)
+        return post
+
+    def add_item(self, post, path):
+        """Add a photo or video to a post, which makes it a carousel."""
+        if post.target == 'story': raise EngineError('A story holds one photo or video.')
+        items = post.media_items()
+        if len(items) >= CAROUSEL_MAX: raise EngineError(f'A carousel takes at most {CAROUSEL_MAX} photos or videos.')
+        src, _, warning = self._check_file(path)
+        items.append(str(self._copy_in(src, post.id, len(items) + 1)))
+        sources = (post.sources or [Path(post.source).name])[:len(items) - 1] + [src.name]
+        return self.update(post, items=items, sources=sources, kind='carousel', warning='; '.join(w for w in (post.warning, warning) if w))
+
+    def remove_item(self, post, index):
+        """Take one photo or video out of a carousel; with one left, the post is a plain photo or video again."""
+        items = post.media_items(); sources = list(post.sources) or [Path(post.source).name] * len(items)
+        if len(items) < 2: raise EngineError('A post needs at least one photo or video; remove the post instead.')
+        gone = items.pop(index); sources.pop(index)
+        with contextlib.suppress(OSError): Path(gone).unlink()
+        kind = 'carousel' if len(items) > 1 else media_kind(items[0])
+        return self.update(post, items=items, sources=sources, media=items[0], kind=kind, source=sources[0])
+
+    def duplicate(self, post):
+        """A copy of a post, with its own media copies, scheduled for the next free slot."""
+        new_id = uuid.uuid4().hex[:12]; copies = []
+        for i, item in enumerate(post.media_items()):
+            copies.append(str(self._copy_in(Path(item), new_id, i + 1 if post.kind == 'carousel' else None)))
+        copy = Post(id=new_id, media=copies[0], source=post.source, kind=post.kind, when=fmt_when(self.next_slot()), caption=post.caption,
+                    fit=post.fit, warning=post.warning, created=fmt_when(now_local()), items=copies, sources=list(post.sources), target=post.target,
+                    first_comment=post.first_comment, alt_text=post.alt_text, cover_seconds=post.cover_seconds)
+        self.posts.append(copy); self.save()
+        return copy
+
+    def import_sheet(self, csv_path):
+        """Add posts from a CSV with the columns file, date, time, caption, first_comment, alt_text, target (file is
+        required; paths are relative to the sheet). Returns (posts added, problems as sentences)."""
+        import csv
+        path = Path(csv_path); added, problems = [], []
+        with path.open(encoding='utf-8-sig', newline='') as f:
+            for number, row in enumerate(csv.DictReader(f), start=2):
+                row = {(k or '').strip().lower(): (v or '').strip() for k, v in row.items()}
+                try:
+                    if not row.get('file'): raise EngineError('no file')
+                    files = [path.parent / p.strip() for p in row['file'].split('|') if p.strip()]
+                    when = self.next_slot()
+                    if row.get('date'):
+                        when = dt.datetime.strptime(f'{row["date"]} {row.get("time") or f"{int(self.settings.get("default_hour", 9)):02d}:{int(self.settings.get("default_minute", 0)):02d}"}', '%Y-%m-%d %H:%M').astimezone()
+                    target = 'story' if row.get('target', '').lower() == 'story' else 'feed'
+                    post = self.add_carousel(files, when, row.get('caption', '')) if len(files) > 1 else self.add(files[0], when, row.get('caption', ''), target=target)
+                    self.update(post, first_comment=row.get('first_comment', ''), alt_text=row.get('alt_text', ''))
+                    added.append(post)
+                except (EngineError, ValueError, OSError) as exc:
+                    problems.append(f'Row {number}: {exc}')
+        return added, problems
 
     def update(self, post, **changes):
         for key, value in changes.items(): setattr(post, key, value)
@@ -251,7 +338,8 @@ class Engine:
 
     def remove(self, post):
         self.posts = [p for p in self.posts if p.id != post.id]
-        with contextlib.suppress(OSError): Path(post.media).unlink()
+        for item in post.media_items():
+            with contextlib.suppress(OSError): Path(item).unlink()
         self.save()
 
     # --- timing ---------------------------------------------------------------------------------------------------
@@ -290,9 +378,10 @@ class Engine:
 
     # --- media ----------------------------------------------------------------------------------------------------
     @staticmethod
-    def prepare_image(src, dest, fit='crop'):
+    def prepare_image(src, dest, fit='crop', story=False):
         """Make a JPEG Instagram accepts: orientation applied, transparency on white, aspect ratio within 4:5 to
-        1.91:1 (cropped to the nearest allowed ratio, or padded with white), width 320 to 1440, under 8 MB."""
+        1.91:1 (cropped to the nearest allowed ratio, or padded with white), width 320 to 1440, under 8 MB.
+        A story is made 9:16 the same way."""
         from PIL import Image, ImageOps
         dest = Path(dest); dest.parent.mkdir(parents=True, exist_ok=True)
         with Image.open(src) as opened:
@@ -300,7 +389,7 @@ class Engine:
             if im.mode in ('RGBA', 'LA', 'PA') or (im.mode == 'P' and 'transparency' in im.info):
                 im = im.convert('RGBA'); background = Image.new('RGB', im.size, 'white'); background.paste(im, mask=im.split()[-1]); im = background
             else: im = im.convert('RGB')
-            w, h = im.size; left, top, right, bottom = target_box(w, h, fit)
+            w, h = im.size; left, top, right, bottom = target_box(w, h, fit, STORY_RATIO, STORY_RATIO) if story else target_box(w, h, fit)
             if (left, top, right, bottom) != (0, 0, w, h):
                 if fit == 'crop': im = im.crop((left, top, right, bottom))
                 else: background = Image.new('RGB', (right - left, bottom - top), 'white'); background.paste(im, (-left, -top)); im = background
@@ -331,33 +420,65 @@ class Engine:
         return isinstance(exc, (urllib.error.URLError, TimeoutError, ConnectionError))
 
     def publish(self, post, instagram, provider, on_progress=None):
-        """Prepare, host, create the Instagram container, publish, clean up. Updates the post's status and returns it.
-        Transient failures put the post back in the queue for a retry; others mark it failed."""
+        """Prepare, host, create the Instagram container(s), publish, add the first comment, clean up. Updates the
+        post's status and returns it. Transient failures put the post back in the queue for a retry; others mark
+        it failed. Handles a single photo or video (feed), a story, and a carousel."""
         step = on_progress or (lambda fraction, text: None)
         self.update(post, status='posting', error='')
-        prepared = handle = None
+        prepared, hosted = [], []   # temp JPEGs to delete; (handle, kind) pairs to remove from hosting
         try:
             if instagram is None: raise EngineError('No Instagram account is connected. Open Settings > Instagram.')
             if provider is None: raise EngineError('No media hosting is set up. Open Settings > Media hosting.')
-            if not Path(post.media).is_file(): raise EngineError('The media file is missing from the data folder.')
-            if post.kind == 'image':
-                step(0.05, 'Preparing the photo')
-                prepared = self.prepare_image(post.media, self.tmp_dir / f'{post.id}.jpg', post.fit); upload = prepared
-            else: upload = Path(post.media)
-            step(0.15, f'Uploading to {provider.name}')
-            url, handle = provider.upload(upload, post.kind, lambda f: step(0.15 + 0.35 * f, f'Uploading to {provider.name}'))
+            items = post.media_items()
+            for item in items:
+                if not Path(item).is_file(): raise EngineError('A media file is missing from the data folder.')
+            story, carousel = post.target == 'story', post.kind == 'carousel'
+            count = len(items); urls = []
+            for n, item in enumerate(items, start=1):
+                kind = media_kind(item); label = f' {n} of {count}' if carousel else ''
+                if kind == 'image':
+                    step(0.05, f'Preparing the photo{label}')
+                    out = self.prepare_image(item, self.tmp_dir / f'{post.id}-{n}.jpg', post.fit, story=story); prepared.append(out); upload = out
+                else: upload = Path(item)
+                step(0.1 + 0.4 * (n - 1) / count, f'Uploading{label} to {provider.name}')
+                url, handle = provider.upload(upload, kind, lambda f, n=n: step(0.1 + 0.4 * (n - 1 + f) / count, f'Uploading{label} to {provider.name}'))
+                hosted.append((handle, kind)); urls.append((url, kind))
             step(0.55, 'Creating the Instagram post')
-            if post.kind == 'image': container = instagram.create_image(url, post.caption)
+            if story:
+                url, kind = urls[0]; container = instagram.create_story(url, video=kind == 'video')
+                if kind == 'video':
+                    step(0.65, 'Instagram is processing the video')
+                    instagram.wait_container(container, on_progress=lambda s: step(0.7, f'Instagram is processing the video ({s.lower().replace("_", " ")})'))
+            elif carousel:
+                children = []
+                for n, (url, kind) in enumerate(urls, start=1):
+                    child = instagram.create_image(url, carousel_item=True) if kind == 'image' else instagram.create_video(url, carousel_item=True)
+                    if kind == 'video':
+                        step(0.6, f'Instagram is processing video {n} of {count}')
+                        instagram.wait_container(child, on_progress=lambda s, n=n: step(0.65, f'Instagram is processing video {n} of {count} ({s.lower().replace("_", " ")})'))
+                    children.append(child)
+                container = instagram.create_carousel(children, post.caption)
+                step(0.75, 'Instagram is assembling the carousel')
+                instagram.wait_container(container, on_progress=lambda s: step(0.78, f'Instagram is assembling the carousel ({s.lower().replace("_", " ")})'))
             else:
-                container = instagram.create_video(url, post.caption)
-                step(0.65, 'Instagram is processing the video')
-                instagram.wait_container(container, on_progress=lambda s: step(0.7, f'Instagram is processing the video ({s.lower().replace("_", " ")})'))
+                url, kind = urls[0]
+                if kind == 'image': container = instagram.create_image(url, post.caption, alt_text=post.alt_text)
+                else:
+                    container = instagram.create_video(url, post.caption, cover_offset_ms=int(post.cover_seconds * 1000) if post.cover_seconds else None)
+                    step(0.65, 'Instagram is processing the video')
+                    instagram.wait_container(container, on_progress=lambda s: step(0.7, f'Instagram is processing the video ({s.lower().replace("_", " ")})'))
             step(0.85, 'Publishing')
             media_id = instagram.publish(container)
             link = ''
             with contextlib.suppress(Exception): link = instagram.permalink(media_id)
             self.update(post, status='posted', media_id=str(media_id), permalink=link, posted_at=fmt_when(now_local()), retry_at='', error='')
             self.log.info('posted %s as %s %s', post.name(), media_id, link)
+            if post.first_comment and not story:
+                step(0.95, 'Adding the first comment')
+                try: instagram.comment(media_id, post.first_comment)
+                except Exception as exc:
+                    self.update(post, warning=f'Posted, but the first comment could not be added: {self.describe(exc)}')
+                    self.log.warning('first comment failed for %s: %s', post.name(), exc)
             step(1.0, 'Posted')
         except Exception as exc:
             attempts, message = post.attempts + 1, self.describe(exc)
@@ -368,9 +489,30 @@ class Engine:
                 self.update(post, status='failed', attempts=attempts, retry_at='', error=message)
             self.log.warning('publish failed for %s: %s', post.name(), message)
         finally:
-            if handle is not None:
-                try: provider.delete(handle, post.kind)
+            for handle, kind in hosted:
+                try: provider.delete(handle, kind)
                 except Exception as exc: self.log.warning('could not remove hosted copy %s: %s', handle, exc)
-            if prepared is not None:
-                with contextlib.suppress(OSError): Path(prepared).unlink()
+            for out in prepared:
+                with contextlib.suppress(OSError): Path(out).unlink()
         return post
+
+
+# --- updates -----------------------------------------------------------------------------------------------------
+def version_tuple(text):
+    """'v1.2.3-rc1' -> (1, 2, 3, 'rc1'); plain releases sort after their candidates."""
+    text = text.strip().lstrip('vV'); base, _, suffix = text.partition('-')
+    numbers = tuple(int(p) for p in base.split('.') if p.isdigit())
+    return numbers + (suffix or '~',)   # '~' sorts after 'rc1', so 1.1.0 > 1.1.0-rc1
+
+
+def check_for_update(current, fetch=None):
+    """The newest GitHub release that is newer than `current`, as (tag, page url), or None. Quiet on any failure."""
+    try:
+        if fetch is None:
+            with urllib.request.urlopen(urllib.request.Request(RELEASES_API, headers={'User-Agent': 'PostQueue', 'Accept': 'application/vnd.github+json'}), timeout=15) as r:
+                data = json.loads(r.read().decode('utf-8'))
+        else: data = fetch()
+        tag = data.get('tag_name', '')
+        if tag and version_tuple(tag) > version_tuple(current) and not data.get('draft'): return tag, data.get('html_url', '')
+    except Exception: pass
+    return None

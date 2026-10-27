@@ -31,7 +31,7 @@ DEFAULTS = {
     # Behaviour
     # start_with_windows: None = not chosen in the app (the installer's entry decides); True/False = the user's choice
     'start_with_windows': None, 'close_to_tray': True, 'grace_hours': 12, 'fit_mode': 'crop',
-    'default_hour': 9, 'default_minute': 0, 'paused': False, 'tray_hint_shown': False, 'setup_done': False, 'window': None,
+    'default_hour': 9, 'default_minute': 0, 'paused': False, 'tray_hint_shown': False, 'setup_done': False, 'update_check': True, 'window': None,
 }
 
 MAC = sys.platform == 'darwin'

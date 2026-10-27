@@ -159,13 +159,31 @@ Press **Start using PostQueue** (1).
 
 PostQueue keeps its own copy of each file, so you can move or delete the originals after adding them.
 
+### 4.1 More than a single photo
+
+- **Carousels.** Add several files at once and PostQueue asks: **One post each**, or **One carousel post** (2 to 10 photos or videos, swiped through on Instagram). To turn an existing post into a carousel, press **Add another photo or video** under **In this post**; select a thumbnail there and press **Remove selected** to take one out. The caption applies to the whole carousel; videos inside a carousel are posted as videos, not Reels.
+- **Stories.** Set **Post as** to **Story**. The photo or video goes out as a story: shaped 9:16 (the preview shows the crop or borders), with no caption, gone after 24 hours.
+- **First comment.** Text posted as the first comment right after publishing. Many people keep their hashtags here so the caption stays clean. If Instagram refuses the comment, the post still counts as posted and the confirmation says the comment was not added.
+- **Alt text** (photos): a short description for people who cannot see the picture; Instagram also uses it for search.
+- **Cover at** (videos): the second of the video that becomes its cover picture.
+
+### 4.2 Drafts, copies and whole plans
+
+- **Draft.** Tick **Draft: keep, do not post yet** and save. The post stays in the queue marked Draft and never goes out until you untick it and save again. Useful for a caption you are still writing.
+- **Duplicate.** Makes a copy of the selected post, with its photos and all its settings, scheduled for the next free slot. Change what differs and save.
+- **Add from a sheet.** For a whole month at once: a CSV file with the columns `file`, `date`, `time`, `caption`, `first_comment`, `alt_text`, `target`. Only `file` is required; paths are relative to the sheet; `date` is `2027-05-01` and `time` is `18:30` (missing date means the next free slot, missing time means your usual time); `target` is `story` for a story; several files separated by `|` in one `file` cell make a carousel. Rows that cannot be added are listed afterwards, and the rest go in.
+
+### 4.3 New versions
+
+On start, PostQueue looks once at its Releases page. When a newer version exists, a blue strip at the top says so, with a **Download** button. Settings › General turns the check off.
+
 ## 5. What Instagram allows
 
 - About 50 posts per account per 24 hours through the API (PostQueue reports the limit's error if it is reached).
 - Photos: JPEG, 4:5 to 1.91:1, up to 8 MB. PostQueue converts and resizes automatically.
 - Videos are posted as **Reels**: MP4/MOV, 3 seconds to 15 minutes, 9:16 recommended, up to 1 GB. PostQueue checks the length and shape as you add the file and says so under the preview. Instagram processes the video after upload, which can take a few minutes.
 - Captions: up to 2,200 characters, 30 hashtags, 20 @mentions.
-- Single photos and videos only; carousels (several photos in one post) and Stories are not in this version.
+- Carousels: 2 to 10 photos or videos; Stories: one photo or video at 9:16, no caption. Collaborative posts, product tags and location tags are not in this version.
 
 ## 6. If something goes wrong
 

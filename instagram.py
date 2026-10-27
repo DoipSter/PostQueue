@@ -83,13 +83,29 @@ class Instagram:
 
     def profile(self): return self.get(self.user_id, fields='username')
 
-    def create_image(self, image_url, caption=''):
-        return self.post(f'{self.user_id}/media', image_url=image_url, caption=caption)['id']
+    def create_image(self, image_url, caption='', alt_text='', carousel_item=False):
+        """A photo container: a feed post, or one item of a carousel (then without caption)."""
+        if carousel_item: return self.post(f'{self.user_id}/media', image_url=image_url, is_carousel_item='true')['id']
+        return self.post(f'{self.user_id}/media', image_url=image_url, caption=caption, alt_text=alt_text or None)['id']
 
-    def create_video(self, video_url, caption='', share_to_feed=True):
-        """Feed videos are published as Reels, which is what the API offers for single videos."""
+    def create_video(self, video_url, caption='', share_to_feed=True, cover_offset_ms=None, carousel_item=False):
+        """A video container: a Reel for the feed (optionally with the cover frame at `cover_offset_ms`), or one
+        item of a carousel."""
+        if carousel_item: return self.post(f'{self.user_id}/media', media_type='VIDEO', video_url=video_url, is_carousel_item='true')['id']
         return self.post(f'{self.user_id}/media', media_type='REELS', video_url=video_url, caption=caption,
-                         share_to_feed='true' if share_to_feed else 'false')['id']
+                         share_to_feed='true' if share_to_feed else 'false', thumb_offset=cover_offset_ms)['id']
+
+    def create_story(self, media_url, video=False):
+        """A story container; stories take no caption."""
+        params = {'media_type': 'STORIES', ('video_url' if video else 'image_url'): media_url}
+        return self.post(f'{self.user_id}/media', **params)['id']
+
+    def create_carousel(self, children, caption=''):
+        """The parent container that joins 2 to 10 item containers."""
+        return self.post(f'{self.user_id}/media', media_type='CAROUSEL', children=','.join(children), caption=caption)['id']
+
+    def comment(self, media_id, text):
+        return self.post(f'{media_id}/comments', message=text)['id']
 
     def container_status(self, container_id):
         r = self.get(container_id, fields='status_code,status')

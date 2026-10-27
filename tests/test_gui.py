@@ -40,6 +40,8 @@ def window(qapp, tmp_path, settings, fakes, monkeypatch):
     monkeypatch.setattr(cfg, 'starts_at_login', lambda home=None: False)
     monkeypatch.setattr(QMessageBox, 'question', staticmethod(lambda *a, **k: QMessageBox.Yes))
     monkeypatch.setattr(QMessageBox, 'warning', staticmethod(lambda *a, **k: QMessageBox.Ok))
+    monkeypatch.setattr(ui.MainWindow, 'ask_how_to_add', lambda self, count: 'each')   # the "one post each / one carousel" question
+    monkeypatch.setattr(ui.eng, 'check_for_update', lambda current, fetch=None: None)   # no network for the version check
     engine = eng.Engine(tmp_path / 'data', settings)
     w = ui.MainWindow(engine, settings); w.show(); qapp.processEvents()
     yield w
@@ -332,6 +334,61 @@ def test_hosting_panel_offers_the_built_in_service(window, monkeypatch):
     panel.mode.setCurrentIndex(1); assert window.settings['hosting'] == 'cloudinary' and panel.cloud_group.isVisibleTo(panel) and panel.is_ready()   # cloud details were in the fixture
     monkeypatch.setattr(ui.branding, 'SERVICE_URL', '')
     assert ui.HostingPanel(window.settings).mode.count() == 1
+
+
+def test_several_files_become_a_carousel_when_asked(window, tmp_path, monkeypatch):
+    monkeypatch.setattr(ui.MainWindow, 'ask_how_to_add', lambda self, count: 'carousel')
+    added = window.add_paths([photo(tmp_path, 'a.jpg'), photo(tmp_path, 'b.jpg'), photo(tmp_path, 'c.jpg')])
+    assert len(added) == 1 and added[0].kind == 'carousel' and window.current is added[0] and window.items_list.count() == 3
+    assert window.name_label.text().startswith('a.jpg +2  (carousel of 3)') and not window.target_combo.isVisibleTo(window.detail) and 'Carousel' in window.media_info.text()
+    window.items_list.setCurrentRow(2); window.remove_item(); assert len(window.current.items) == 2 and window.items_list.count() == 2
+    window.add_item_path(photo(tmp_path, 'd.jpg')); assert len(window.current.items) == 3
+    monkeypatch.setattr(ui.MainWindow, 'ask_how_to_add', lambda self, count: None)
+    assert window.add_paths([photo(tmp_path, 'e.jpg'), photo(tmp_path, 'f.jpg')]) == []   # Cancel adds nothing
+
+
+def test_story_switch_disables_caption_and_saves(window, tmp_path):
+    window.add_paths([photo(tmp_path, size=(2000, 1000))]); post = window.current
+    window.target_combo.setCurrentIndex(1)
+    assert not window.caption.isEnabled() and 'Story' in window.media_info.text() and not window.first_comment.isVisibleTo(window.detail) and window.dirty
+    window.save_button.click(); assert eng.Engine(window.engine.dir).get(post.id).target == 'story' and window.name_label.text().endswith('(story)')
+    window.target_combo.setCurrentIndex(0); window.save_button.click(); assert post.target == 'feed' and window.caption.isEnabled()
+
+
+def test_first_comment_alt_text_cover_and_draft(window, tmp_path):
+    window.add_paths([photo(tmp_path)]); post = window.current
+    assert window.alt_text.isVisibleTo(window.detail) and not window.cover_spin.isVisibleTo(window.detail)
+    window.first_comment.setText('#one #two'); window.alt_text.setText('A teal square'); window.draft_box.setChecked(True); window.save_button.click()
+    again = eng.Engine(window.engine.dir).get(post.id)
+    assert again.first_comment == '#one #two' and again.alt_text == 'A teal square' and again.status == 'draft' and 'Draft' in window.status_label.text()
+    assert window.engine.check() is None and window.tree.topLevelItem(0).text(3) == 'Draft' and window.post_now_button.isVisible()
+    window.draft_box.setChecked(False); window.save_button.click(); assert post.status == 'queued'
+    clip = tmp_path / 'c.mp4'; clip.write_bytes(b'\0' * 100); window.add_paths([str(clip)])
+    assert window.cover_spin.isVisibleTo(window.detail) and not window.alt_text.isVisibleTo(window.detail)
+    window.cover_spin.setValue(3.5); window.save_button.click(); assert window.current.cover_seconds == 3.5
+
+
+def test_duplicate_makes_a_scheduled_copy(window, tmp_path):
+    window.add_paths([photo(tmp_path)]); original = window.current; window.caption.setPlainText('Again'); window.save_button.click()
+    window.duplicate_button.click()
+    assert window.current is not original and window.current.caption == 'Again' and len(window.engine.posts) == 2 and window.current.media != original.media
+
+
+def test_add_from_a_sheet(window, tmp_path, monkeypatch):
+    photo(tmp_path, 'one.jpg'); photo(tmp_path, 'two.jpg')
+    sheet = tmp_path / 'plan.csv'; sheet.write_text('file,date,time,caption\none.jpg,2027-05-01,10:00,First\ntwo.jpg,2027-05-02,,Second\nnope.jpg,,,\n', encoding='utf-8')
+    warned = []; monkeypatch.setattr(QMessageBox, 'warning', staticmethod(lambda *a, **k: warned.append(a[2])))
+    monkeypatch.setattr(QFileDialog, 'getOpenFileName', staticmethod(lambda *a, **k: (str(sheet), '')))
+    window.act_sheet.trigger()
+    assert len(window.engine.posts) == 2 and window.current.caption == 'Second' and 'Added 2 posts' in warned[0] and 'Row 4' in warned[0]
+
+
+def test_update_notice(window, monkeypatch):
+    monkeypatch.setattr(ui.eng, 'check_for_update', lambda current, fetch=None: ('v9.0.0', 'https://x/releases/v9.0.0'))
+    window.check_update()
+    assert wait_until(lambda: window.result.isVisible() and '9.0.0 is available' in window.result_text.text())
+    assert window.result_open.text() == 'Download' and window.result.property('ok') == 'update'
+    window.result_dismiss.click(); assert not window.result.isVisible()
 
 
 def test_date_picker_has_calendar_and_time(window, tmp_path):

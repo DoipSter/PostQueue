@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.0
+
+More kinds of posts, and less typing.
+
+- **Carousels:** add several photos or videos at once and choose "One carousel post" (2 to 10 items, swiped through on Instagram), or add another photo to an existing post with **Add another photo or video**. The strip under the preview shows the items; **Remove selected** takes one out. Videos in a carousel are posted as videos, not Reels.
+- **Stories:** **Post as › Story** publishes a photo or video as a story (9:16, no caption, gone after 24 hours). Photos are cropped or padded to 9:16 the same way feed photos are fitted, and the preview shows it.
+- **First comment:** text posted as the first comment right after publishing, where many people keep their hashtags. If the comment fails, the post still counts as posted and the strip says so.
+- **Alt text** for photos, and a **cover moment** for videos (which second of the video becomes its cover picture).
+- **Drafts and Duplicate:** tick **Draft** to keep a post without scheduling it; **Duplicate** copies a post with its photos and settings onto the next free slot.
+- **Add from a sheet:** a CSV with the columns `file`, `date`, `time`, `caption`, `first_comment`, `alt_text`, `target` adds a whole plan at once; `file` may hold several paths separated by `|` for a carousel, and paths are relative to the sheet. Rows that cannot be added are listed, the rest go in.
+- **New versions:** on start, PostQueue checks the Releases page once and shows a blue strip with a Download button when a newer version exists (Settings › General turns it off).
+- **Sign-in asks only for the permissions App Review covers.**
+
 ## 1.0.0
 
 First release.

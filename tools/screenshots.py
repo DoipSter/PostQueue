@@ -47,7 +47,7 @@ def main(out):
     app = ui.make_app()
     data = Path(tempfile.mkdtemp(prefix='postqueue_shots_'))
     settings = cfg.Settings(data / 'settings.json')
-    settings.update({'access_token': 'x', 'ig_user_id': '1', 'ig_username': 'studio.north', 'cloudinary_cloud': 'c', 'cloudinary_api_key': 'k', 'cloudinary_api_secret': 's',
+    settings.update({'access_token': 'x', 'ig_user_id': '1', 'ig_username': 'studio.north', 'hosting': 'cloudinary', 'cloudinary_cloud': 'c', 'cloudinary_api_key': 'k', 'cloudinary_api_secret': 's',
                      'start_with_windows': False, 'token_expires': eng.fmt_when(eng.now_local() + dt.timedelta(days=45))})
     engine = eng.Engine(data, settings); now = eng.now_local()
     p1 = engine.add(sample_photo(data / 'harbour-morning.jpg', (1600, 1000), (52, 120, 160), 'HARBOUR'), now.replace(hour=9, minute=0) + dt.timedelta(days=1),

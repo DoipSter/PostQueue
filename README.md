@@ -1,6 +1,6 @@
 # PostQueue 1.0
 
-A Windows and Mac app that posts photos and videos to Instagram on a schedule. Drop files in, pick the date and time for each, write the caption, and PostQueue publishes them through Meta's official Instagram API while it sits in the notification area or menu bar. Installing is one click (Windows) or one drag (Mac), and the first run asks for one thing per screen.
+A Windows and Mac app that posts photos, videos, carousels and stories to Instagram on a schedule. Drop files in, pick the date and time for each, write the caption (and a first comment, alt text or a cover moment if you like), and PostQueue publishes them through Meta's official Instagram API while it sits in the notification area or menu bar. Drafts, Duplicate and adding a whole plan from a sheet are there for bigger queues. Installing is one click (Windows) or one drag (Mac), and the first run asks for one thing per screen.
 
 - **Download:** the [Releases page](https://github.com/DoipSter/PostQueue/releases) has the Windows installers (x64, ARM64), the portable EXEs and the Mac disk images (Apple silicon, Intel) for each version
 - **Picture by picture:** [docs/walkthrough](docs/walkthrough/README.md) (every screen from first launch to a posted photo and its confirmation)
