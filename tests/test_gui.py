@@ -112,6 +112,9 @@ def test_post_now_publishes_and_offers_link(window, tmp_path, fakes):
     assert fakes['instagram'].calls[0][2] == 'Now!' and fakes['provider'].deleted and window.open_button.isVisible() and not window.post_now_button.isVisible()
     assert window.tree.topLevelItem(0).text(3) == 'Posted' and not window.progress.isVisible()
     assert window.status_label.text().startswith('Posted on')
+    assert window.result.isVisible() and window.result_text.text().startswith('✓ Posted pic.jpg to Instagram at') and window.result_open.isVisible()
+    assert window.result_url.endswith('/1789/') and window.result.property('ok') == 'true'
+    window.result_dismiss.click(); assert not window.result.isVisible()
 
 
 def test_scheduler_posts_due_items_and_marks_missed(window, tmp_path, fakes):
@@ -140,6 +143,7 @@ def test_failure_is_shown_with_retry_offer(window, tmp_path, fakes):
     window.add_paths([photo(tmp_path)]); post = window.current; window.post_now_button.click()
     assert wait_until(lambda: window.worker is None and post.status == 'failed')
     assert 'could not fetch' in window.status_label.text() and 'Post now' in window.post_now_button.text() and window.post_now_button.isVisible()
+    assert window.result.isVisible() and window.result_text.text().startswith('✗ Could not post') and not window.result_open.isVisible() and window.result.property('ok') == 'false'
 
 
 def test_not_set_up_fails_without_network(window, tmp_path, monkeypatch):

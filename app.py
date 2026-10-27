@@ -390,6 +390,10 @@ QMainWindow#main, QDialog#settings {{ background: {GRADIENT}; }}
 #settings QScrollBar::add-line:vertical, #settings QScrollBar::sub-line:vertical {{ height: 0; }}
 #main QFrame#banner {{ background: rgba(255,196,0,0.14); border: 1px solid rgba(255,196,0,0.5); border-radius: 12px; }}
 #main QFrame#banner QLabel {{ color: white; }}
+#main QFrame#result[ok="true"] {{ background: rgba(80,200,120,0.18); border: 1px solid rgba(127,224,160,0.65); border-radius: 12px; }}
+#main QFrame#result[ok="false"] {{ background: rgba(229,57,43,0.18); border: 1px solid rgba(255,138,122,0.65); border-radius: 12px; }}
+#main QLabel#result_text {{ font-size: 13pt; font-weight: 600; }}
+#main QPushButton#result_open {{ background: rgba(255,255,255,0.24); border: 1px solid rgba(255,255,255,0.7); font-weight: 600; }}
 #main QStatusBar {{ background: transparent; color: rgba(255,255,255,0.7); }}
 #main QStatusBar::item {{ border: none; }}
 #main QProgressBar {{ border: 1px solid rgba(255,255,255,0.3); border-radius: 6px; background: rgba(255,255,255,0.08); text-align: center; color: white; }}
@@ -799,6 +803,13 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout(self.banner); row.setContentsMargins(14, 10, 14, 10); self.banner_text = QLabel(''); self.banner_text.setWordWrap(True); row.addWidget(self.banner_text, 1)
         self.banner_button = QPushButton('Finish setup'); self.banner_button.setObjectName('banner_button'); self.banner_button.clicked.connect(self.open_setup); row.addWidget(self.banner_button)
         outer.addWidget(self.banner)
+        # The confirmation after a post goes out (green) or fails (red); stays until dismissed.
+        self.result = QFrame(); self.result.setObjectName('result'); self.result.setFrameShape(QFrame.StyledPanel); self.result_url = ''
+        rrow = QHBoxLayout(self.result); rrow.setContentsMargins(14, 10, 14, 10)
+        self.result_text = QLabel(''); self.result_text.setObjectName('result_text'); self.result_text.setWordWrap(True); rrow.addWidget(self.result_text, 1)
+        self.result_open = QPushButton('Open on Instagram'); self.result_open.setObjectName('result_open'); self.result_open.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(self.result_url))); rrow.addWidget(self.result_open)
+        self.result_dismiss = QPushButton('Dismiss'); self.result_dismiss.setObjectName('result_dismiss'); self.result_dismiss.clicked.connect(self.result.hide); rrow.addWidget(self.result_dismiss)
+        outer.addWidget(self.result); self.result.hide()
 
         split = QSplitter(Qt.Horizontal); outer.addWidget(split, 1)
         self.tree = QTreeWidget(); self.tree.setObjectName('queue'); self.tree.setAccessibleName('Scheduled posts')
@@ -1028,11 +1039,24 @@ class MainWindow(QMainWindow):
         post = self.engine.get(post_id); self.refresh()
         if not post: return
         if post.status == 'posted':
-            self.statusBar().showMessage(f'Posted {post.name()} to Instagram.', 10000)
+            self.show_result(post); self.statusBar().showMessage(f'Posted {post.name()} to Instagram.', 10000)
             if self.tray and not self.isVisible(): self.tray.showMessage(PRODUCT, f'Posted {post.name()} to Instagram.', QSystemTrayIcon.Information, 8000)
         elif post.status == 'failed':
+            self.show_result(post)
             if self.tray and not self.isVisible(): self.tray.showMessage(PRODUCT, f'Could not post {post.name()}: {post.error}', QSystemTrayIcon.Warning, 15000)
         QTimer.singleShot(500, self.tick)   # more posts may be due
+
+    def show_result(self, post):
+        """The confirmation strip at the top of the window: what was posted and when, with a link to it, or why it failed."""
+        ok = post.status == 'posted'
+        if ok:
+            when = eng.parse_when(post.posted_at) if post.posted_at else eng.now_local()
+            self.result_text.setText(f'✓ Posted {post.name()} to Instagram at {when:%H:%M} on {when:%a %d %b}.'); self.result_url = post.permalink
+        else:
+            self.result_text.setText(f'✗ Could not post {post.name()}: {post.error}'); self.result_url = ''
+        self.result_open.setVisible(bool(self.result_url))
+        self.result.setProperty('ok', 'true' if ok else 'false'); self.result.style().unpolish(self.result); self.result.style().polish(self.result)
+        self.result.show()
 
     def update_next(self):
         if self.settings.get('paused'): self.next_label.setText('Posting is paused'); return
