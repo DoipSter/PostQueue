@@ -17,7 +17,7 @@ import webbrowser
 
 FB_HOST, IG_HOST = 'graph.facebook.com', 'graph.instagram.com'
 DEFAULT_VERSION = 'v25.0'
-FB_SCOPES = 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement,business_management'
+FB_SCOPES = 'instagram_basic,instagram_content_publish,pages_show_list,pages_read_engagement'   # exactly what App Review is asked for
 IG_SCOPES = 'instagram_business_basic,instagram_business_content_publish'
 LOGIN_PORT = 48215                      # add http://localhost:48215/ to the Meta app's redirect URIs
 TRANSIENT_CODES = {1, 2, 4, 17, 32, 613}  # unknown, service, rate limits
