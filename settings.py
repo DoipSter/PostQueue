@@ -26,8 +26,8 @@ DEFAULTS = {
     'login_kind': 'facebook',          # facebook (account linked to a Facebook Page) | instagram (Instagram Login)
     'app_id': '', 'app_secret': '', 'access_token': '', 'token_expires': '',
     'api_host': 'graph.facebook.com', 'api_version': 'v25.0', 'ig_user_id': '', 'ig_username': '',
-    # Media hosting (Instagram fetches media from a public URL)
-    'hosting': 'cloudinary', 'cloudinary_cloud': '', 'cloudinary_api_key': '', 'cloudinary_api_secret': '',
+    # Media hosting (Instagram fetches media from a public URL): 'service' (the built-in PostQueue service) or 'cloudinary'
+    'hosting': 'service', 'cloudinary_cloud': '', 'cloudinary_api_key': '', 'cloudinary_api_secret': '',
     # Behaviour
     # start_with_windows: None = not chosen in the app (the installer's entry decides); True/False = the user's choice
     'start_with_windows': None, 'close_to_tray': True, 'grace_hours': 12, 'fit_mode': 'crop',
@@ -135,10 +135,11 @@ class Settings(dict):
 
     def connected(self): return bool(self.get('access_token') and self.get('ig_user_id'))
 
-    def hosting_ready(self):
+    def hosting_ready(self, service_url=''):
+        if self.get('hosting') == 'service': return bool(service_url)
         return self.get('hosting') == 'cloudinary' and all(self.get(k) for k in ('cloudinary_cloud', 'cloudinary_api_key', 'cloudinary_api_secret'))
 
-    def ready(self): return self.connected() and self.hosting_ready()
+    def ready(self, service_url=''): return self.connected() and self.hosting_ready(service_url)
 
     def token_expiry(self):
         """When the Instagram token expires, as an aware datetime, or None when unknown."""

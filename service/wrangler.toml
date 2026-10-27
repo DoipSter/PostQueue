@@ -1,0 +1,20 @@
+# The PostQueue service: deploy with `wrangler deploy` from this folder (see README.md).
+name = "postqueue"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+GRAPH_VERSION = "v25.0"
+
+# Temporary media storage. Create it once: wrangler r2 bucket create postqueue-media
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "postqueue-media"
+
+# Hourly cleanup of anything older than a day (the app deletes each file right after posting).
+[triggers]
+crons = ["17 * * * *"]
+
+# Secrets, set once and never committed:
+#   wrangler secret put META_APP_ID
+#   wrangler secret put META_APP_SECRET

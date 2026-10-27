@@ -12,7 +12,52 @@ Closing the window keeps PostQueue running in the notification area on Windows (
 
 ## 2. One-time setup
 
-The first time PostQueue opens, it walks you through setup **one screen at a time**. Each screen tells you one thing to do and has one button. Do the thing, press the button, move on. About fifteen minutes the first time. Everything can be changed later in **Settings** (the gear in the toolbar).
+The first time PostQueue opens, it walks you through setup **one screen at a time**: three short screens, each with one thing to do and one button. Everything can be changed later in **Settings** (the gear in the toolbar).
+
+![Welcome](screenshots/guide-simple-welcome.png)
+
+**Press Start** (1). (**Advanced** (2) is for people who want to use their own Meta app and hosting account; see section 3.)
+
+If you close the steps early, the yellow bar at the top of the window says what is still missing, and its button (1) takes you back to them:
+
+![The window with the setup bar](screenshots/guide-banner.png)
+
+### 2.1 Use a professional Instagram account
+
+![Use a professional account](screenshots/guide-simple-professional.png)
+
+Instagram only allows posting through its API for **Business** or **Creator** accounts. In the Instagram app: Settings › Account type and tools › Switch to professional account. It is free and can be switched back. For Facebook Login, the account also needs a linked Facebook Page: Instagram › Settings › Business tools and controls › Connect a Facebook Page (create a Page if you have none). Press **Done, next** (1).
+
+### 2.2 Sign in
+
+![Sign in](screenshots/guide-simple-sign-in.png)
+
+Press **Sign in in the browser** (1). The browser opens Meta's sign-in: approve PostQueue there, then come back. The screen says "Connected as @yourname" and moves on by itself. If several Pages have Instagram accounts, one extra screen asks which one to post as.
+
+**Use Instagram Login instead** (2) is for an Instagram account that is not linked to a Facebook Page. If the browser ends on an error page, press **The browser ended on an error page**, paste the `code=…` part of its address, and press Enter.
+
+### 2.3 When to post
+
+![When do you usually post?](screenshots/guide-simple-time.png)
+
+Pick your **usual posting time** (1) and press **Next** (2). Each photo you add later is scheduled for the next free day at this time; you can change any of them. PostQueue also starts when you sign in to your computer, so posts go out even if you forget to open it (Settings › General turns that off).
+
+![All set](screenshots/guide-simple-done.png)
+
+Press **Start using PostQueue** (1).
+
+Photos are hosted for the moment it takes Instagram to fetch them by the PostQueue service, then removed. Nothing to set up.
+
+### 2.4 Settings > General (later changes)
+
+- **Start PostQueue when I sign in:** the Windows installer turns this on; on a Mac, the setup steps ask. Needed for posts to go out on time. On Windows, turning it off here is the same as disabling "PostQueue Startup" in Task Manager's Startup apps; on a Mac it adds or removes a login item (a LaunchAgent). (With the portable EXE, tick it here.)
+- **Default posting time for new posts:** each file you add is scheduled for the next free day at this time.
+- **If the PC was off at the scheduled time, still post within…:** 12 hours by default. A post that is later than that is marked **Missed** instead of going out at an odd time; you can reschedule it or post it now.
+- **Photos outside Instagram's shape range:** Instagram accepts photos between 4:5 (portrait) and 1.91:1 (landscape). Others are cropped (centred) or given white borders. You can change this per photo.
+
+## 3. Advanced setup: your own Meta app and hosting
+
+This is the path PostQueue takes when it was built without a built-in Meta app and service (see the build guide), or when you press **Advanced** on the welcome screen because you want to use your own. Each screen still asks for one thing, but there are about fifteen of them, and they include creating a Meta app and a Cloudinary account. About fifteen minutes.
 
 ![Welcome](screenshots/guide-setup-welcome.png)
 
@@ -22,7 +67,7 @@ If you close the steps early, the yellow bar at the top of the window says what 
 
 ![The window with the setup bar](screenshots/guide-banner.png)
 
-### 2.1 Your Instagram account
+### 3.1 Your Instagram account
 
 ![Use a professional account](screenshots/guide-setup-professional.png)
 
@@ -36,7 +81,7 @@ Pick one:
 2. **Instagram Login** if you want to keep Facebook out of it.
 3. **I already have an access token** skips the Meta app screens: for a Meta Business Suite system-user token (never expires) or a Graph API Explorer token with `instagram_basic` and `instagram_content_publish`.
 
-### 2.2 The Meta app (five short screens)
+### 3.2 The Meta app (five short screens)
 
 A Meta app is a free registration that lets PostQueue post as you. The screens take you through it one value at a time.
 
@@ -60,7 +105,7 @@ In the dashboard open **Facebook Login › Settings** (or **Instagram › Busine
 
 **App roles › Roles**: add your own account as an administrator or tester. For Instagram Login, also add the Instagram account under **Instagram testers**, then accept the invitation in the Instagram app (Settings › Apps and websites › Tester invites). Press **Done, next** (1). Development mode is enough for your own accounts; App Review is only needed if other people will use your app.
 
-### 2.3 Sign in
+### 3.3 Sign in
 
 ![Sign in](screenshots/guide-setup-sign-in.png)
 
@@ -68,7 +113,7 @@ Press **Sign in in the browser** (1). Approve Meta's request in the browser, the
 
 If the browser ends on an error page, press **The browser ended on an error page**, paste the `code=…` part of its address, and press Enter. **Paste a token instead** (2) switches to the token screen.
 
-### 2.4 Media hosting (four short screens)
+### 3.4 Media hosting (four short screens)
 
 ![Create a Cloudinary account](screenshots/guide-setup-cloudinary.png)
 
@@ -82,7 +127,7 @@ In the Cloudinary console open **Settings › API Keys** (or the dashboard's "Pr
 
 Press **Test hosting** (1). PostQueue uploads a tiny test image, removes it, says "Hosting works", and moves on. If it fails, the screen says why; **Skip this** (2) lets you carry on and test later in Settings.
 
-### 2.5 When to post
+### 3.5 When to post
 
 ![When do you usually post?](screenshots/guide-setup-time.png)
 
@@ -96,14 +141,7 @@ Press **Yes, start PostQueue when I sign in** (1). Posts only go out while PostQ
 
 Press **Start using PostQueue** (1).
 
-### 2.6 Settings > General (later changes)
-
-- **Start PostQueue when I sign in:** the Windows installer turns this on; on a Mac, the setup steps ask. Needed for posts to go out on time. On Windows, turning it off here is the same as disabling "PostQueue Startup" in Task Manager's Startup apps; on a Mac it adds or removes a login item (a LaunchAgent). (With the portable EXE, tick it here.)
-- **Default posting time for new posts:** each file you add is scheduled for the next free day at this time.
-- **If the PC was off at the scheduled time, still post within…:** 12 hours by default. A post that is later than that is marked **Missed** instead of going out at an odd time; you can reschedule it or post it now.
-- **Photos outside Instagram's shape range:** Instagram accepts photos between 4:5 (portrait) and 1.91:1 (landscape). Others are cropped (centred) or given white borders. You can change this per photo.
-
-## 3. Daily use
+## 4. Daily use
 
 ![The main window](screenshots/guide-main.png)
 
@@ -121,7 +159,7 @@ Press **Start using PostQueue** (1).
 
 PostQueue keeps its own copy of each file, so you can move or delete the originals after adding them.
 
-## 4. What Instagram allows
+## 5. What Instagram allows
 
 - About 50 posts per account per 24 hours through the API (PostQueue reports the limit's error if it is reached).
 - Photos: JPEG, 4:5 to 1.91:1, up to 8 MB. PostQueue converts and resizes automatically.
@@ -129,7 +167,7 @@ PostQueue keeps its own copy of each file, so you can move or delete the origina
 - Captions: up to 2,200 characters, 30 hashtags, 20 @mentions.
 - Single photos and videos only; carousels (several photos in one post) and Stories are not in this version.
 
-## 5. If something goes wrong
+## 6. If something goes wrong
 
 - **A row says Failed.** Select it to read why. Typical causes: the sign-in expired (sign in again in Settings), hosting details are wrong (Test hosting), or Instagram rejected the file (a video in an unsupported format). Fix the cause, then **Post now** or change the time and **Save changes**.
 - **A row says Missed.** The PC was off or PostQueue was not running at the scheduled time, and the grace period passed. Reschedule it or post it now.

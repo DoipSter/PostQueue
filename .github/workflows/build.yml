@@ -40,6 +40,9 @@ jobs:
         shell: cmd
         env:
           PY: python
+          # The built-in Meta app and service for the simple sign-in (BUILD_AND_TEST_GUIDE.md, section 7); unset = advanced path.
+          POSTQUEUE_META_APP_ID: ${{ vars.POSTQUEUE_META_APP_ID }}
+          POSTQUEUE_SERVICE_URL: ${{ vars.POSTQUEUE_SERVICE_URL }}
           # Optional signing with Azure Trusted Signing; leave the secrets unset to build unsigned.
           SIGN_DLIB: ${{ secrets.SIGN_DLIB }}
           SIGN_METADATA: ${{ secrets.SIGN_METADATA }}
@@ -86,6 +89,8 @@ jobs:
           # Optional signing and notarization; leave the secrets unset to build unsigned.
           SIGN_IDENTITY: ${{ secrets.MAC_SIGN_IDENTITY }}
           NOTARY_PROFILE: ${{ secrets.MAC_NOTARY_PROFILE }}
+          POSTQUEUE_META_APP_ID: ${{ vars.POSTQUEUE_META_APP_ID }}
+          POSTQUEUE_SERVICE_URL: ${{ vars.POSTQUEUE_SERVICE_URL }}
         run: chmod +x build_macos.sh && ./build_macos.sh
 
       - name: Release tests (bundle, disk image, launch, lock, second launch, quit, crash)

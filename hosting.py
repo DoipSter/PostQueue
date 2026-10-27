@@ -112,8 +112,62 @@ class Cloudinary:
         return result['secure_url']
 
 
-def make_provider(settings):
+SERVICE_LIMIT = 95 * 1024 * 1024   # the service accepts one request body of up to 100 MB
+
+
+class PostQueueService:
+    """Temporary hosting through the PostQueue service (service/ in the repository). The user's Instagram token
+    identifies them; the service keeps the file for a day at most and PostQueue deletes it right after posting."""
+    name = 'PostQueue hosting'
+
+    def __init__(self, url, token):
+        self.url, self.token = url.rstrip('/'), token
+        if not self.url: raise HostingError('The PostQueue service address is not set.')
+
+    def _request(self, method, path, body=None, content_type=None, name=None):
+        headers = {'Authorization': f'Bearer {self.token}', 'User-Agent': 'PostQueue'}
+        if content_type: headers['Content-Type'] = content_type
+        if name: headers['X-File-Name'] = urllib.parse.quote(name)
+        req = urllib.request.Request(self.url + path, data=body, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r: text, status = r.read().decode('utf-8', 'replace'), r.status
+        except urllib.error.HTTPError as e:
+            text, status = e.read().decode('utf-8', 'replace'), e.code
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            raise HostingError(f'Could not reach the PostQueue service: {getattr(e, "reason", e)}', transient=True)
+        try: payload = json.loads(text) if text else {}
+        except ValueError: payload = {}
+        if status >= 400:
+            message = payload.get('error') if isinstance(payload, dict) else None
+            if status in (401, 403): raise HostingError(f'The PostQueue service did not accept the Instagram sign-in: {message or status}.')
+            raise HostingError(f'The PostQueue service refused the request (HTTP {status}): {message or text[:200]}', transient=status >= 500)
+        return payload
+
+    def upload(self, path, kind, on_progress=None):
+        path = Path(path); size = path.stat().st_size
+        if size > SERVICE_LIMIT:
+            raise HostingError(f'{path.name} is {size // (1024 * 1024)} MB; the PostQueue service takes files up to 95 MB. '
+                               'Shorten or compress the video, or set up Cloudinary hosting in Settings for large files.')
+        ctype = mimetypes.guess_type(path.name)[0] or ('video/mp4' if kind == 'video' else 'image/jpeg')
+        result = self._request('PUT', '/media', path.read_bytes(), ctype, path.name)
+        if not result.get('url') or not result.get('id'): raise HostingError('The PostQueue service did not return a link for the upload.')
+        if on_progress: on_progress(1.0)
+        return result['url'], result['id']
+
+    def delete(self, handle, kind):
+        self._request('DELETE', f'/media/{urllib.parse.quote(str(handle))}')
+
+    def test(self):
+        result = self._request('PUT', '/media', TEST_PNG, 'image/png', 'test.png')
+        if not result.get('url'): raise HostingError('The test upload did not return a link.')
+        self.delete(result.get('id'), 'image')
+        return result['url']
+
+
+def make_provider(settings, service_url=''):
     """The configured hosting provider, or None when hosting is not set up yet."""
+    if settings.get('hosting') == 'service' and service_url and settings.get('access_token'):
+        return PostQueueService(service_url, settings['access_token'])
     if settings.get('hosting') == 'cloudinary' and all(settings.get(k) for k in ('cloudinary_cloud', 'cloudinary_api_key', 'cloudinary_api_secret')):
         return Cloudinary(settings['cloudinary_cloud'], settings['cloudinary_api_key'], settings['cloudinary_api_secret'])
     return None

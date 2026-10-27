@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCalendarWidget,
                                QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
                                QStyle, QSystemTrayIcon, QTabWidget, QTimeEdit, QToolBar, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
+import branding
 import engine as eng
 import hosting
 import instagram as ig
@@ -272,19 +273,33 @@ class HostingPanel(QWidget):
     def __init__(self, settings, parent=None):
         super().__init__(parent); self.settings = settings; self.task = None
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(intro_label('Instagram\'s API does not accept photo uploads: it <b>fetches each photo from a public link</b>. PostQueue uploads the file to your '
-                                     'hosting account just before posting and removes it afterwards. A free <a href="https://cloudinary.com/users/register_free">Cloudinary</a> '
-                                     'account is enough. In the Cloudinary console, open Settings > API Keys and copy the three values.'))
-        group = QGroupBox('Cloudinary'); form = QFormLayout(group); layout.addWidget(group)
+        layout.addWidget(intro_label('Instagram\'s API does not accept photo uploads: it <b>fetches each photo from a public link</b>. PostQueue puts the file somewhere '
+                                     'public just before posting and removes it right after.'))
+        self.mode = QComboBox(); self.mode.setObjectName('hosting_mode')
+        if branding.SERVICE_URL: self.mode.addItem('PostQueue hosting (built in, nothing to set up)', 'service')
+        self.mode.addItem('My own Cloudinary account', 'cloudinary')
+        self.mode.setCurrentIndex(max(0, self.mode.findData(self.settings.get('hosting')))); self.mode.currentIndexChanged.connect(self.mode_changed)
+        layout.addWidget(self.mode)
+        group = QGroupBox('Cloudinary'); self.cloud_group = group; form = QFormLayout(group); layout.addWidget(group)
+        form.addRow(intro_label('A free <a href="https://cloudinary.com/users/register_free">Cloudinary</a> account is enough. In the Cloudinary console, '
+                                'open Settings > API Keys and copy the three values.'))
         self.cloud = QLineEdit(self.settings.get('cloudinary_cloud', '')); self.cloud.setObjectName('cloud'); form.addRow('Cloud name', self.cloud)
         self.ckey = QLineEdit(self.settings.get('cloudinary_api_key', '')); self.ckey.setObjectName('ckey'); form.addRow('API key', self.ckey)
         self.csecret = QLineEdit(self.settings.get('cloudinary_api_secret', '')); self.csecret.setObjectName('csecret'); self.csecret.setEchoMode(QLineEdit.Password); form.addRow('API secret', self.csecret)
         for w in (self.cloud, self.ckey, self.csecret): w.editingFinished.connect(self.save)
         row = QHBoxLayout(); test = QPushButton('Test hosting'); test.setObjectName('test_hosting'); test.clicked.connect(self.test); row.addWidget(test); row.addStretch(1); form.addRow('', row)
-        self.status = QLabel(''); self.status.setWordWrap(True); form.addRow('', self.status)
-        if settings.hosting_ready(): self.status.setText('Hosting details entered. Click Test hosting to check them.'); self.status.setStyleSheet(MUTED_STYLE)
+        self.status = QLabel(''); self.status.setWordWrap(True); layout.addWidget(self.status)
+        self.mode_changed(self.mode.currentIndex(), announce=False)
 
-    def is_ready(self): return self.settings.hosting_ready()
+    def is_ready(self): return self.settings.hosting_ready(branding.SERVICE_URL)
+
+    def mode_changed(self, index, announce=True):
+        mode = self.mode.itemData(index) or 'cloudinary'
+        if announce: self.settings['hosting'] = mode; self.settings.save(); self.changed.emit()
+        self.cloud_group.setVisible(mode == 'cloudinary')
+        if mode == 'service': self.status.setText('Photos are hosted by the PostQueue service for the moment it takes to post them. Nothing to set up.'); self.status.setStyleSheet(MUTED_STYLE)
+        elif self.settings.hosting_ready(): self.status.setText('Hosting details entered. Click Test hosting to check them.'); self.status.setStyleSheet(MUTED_STYLE)
+        else: self.status.setText('')
 
     def save(self):
         self.settings['cloudinary_cloud'] = self.cloud.text().strip(); self.settings['cloudinary_api_key'] = self.ckey.text().strip(); self.settings['cloudinary_api_secret'] = self.csecret.text().strip()
@@ -292,7 +307,7 @@ class HostingPanel(QWidget):
 
     def test(self):
         self.save()
-        try: provider = hosting.make_provider(self.settings) or hosting.Cloudinary('', '', '')
+        try: provider = hosting.make_provider(self.settings, branding.SERVICE_URL) or hosting.Cloudinary('', '', '')
         except hosting.HostingError as exc: self.status.setText(str(exc)); self.status.setStyleSheet(BAD_STYLE); return
         self.status.setText('Uploading a test image…'); self.status.setStyleSheet('')
         self.task = Task(provider.test)
@@ -336,7 +351,7 @@ class SettingsDialog(QDialog):
             area = QScrollArea(); area.setWidgetResizable(True); area.setFrameShape(QFrame.NoFrame); area.setWidget(page); self.tabs.addTab(area, name)
         buttons = QDialogButtonBox(QDialogButtonBox.Close); buttons.rejected.connect(self.accept); layout.addWidget(buttons)
         if not settings.connected(): self.tabs.setCurrentIndex(0)
-        elif not settings.hosting_ready(): self.tabs.setCurrentIndex(1)
+        elif not settings.hosting_ready(branding.SERVICE_URL): self.tabs.setCurrentIndex(1)
 
 
 # --- The look: a soft gradient behind everything, frosted-glass controls, large type ---------------------------------
@@ -444,6 +459,11 @@ class SetupFlow(QDialog):
         super().__init__(parent); self.settings = settings; self.setObjectName('setup'); self.setWindowTitle(f'Set up {PRODUCT}')
         self.resize(900, 640); self.setMinimumSize(760, 560); self.setStyleSheet(SETUP_STYLE)
         self.task = None; self.cancelled = False; self.use_token = False; self.found_accounts = []; self.history = []
+        # Simple path: the built-in Meta app and hosting service, so the user only signs in. Advanced path: their own
+        # Meta app and Cloudinary account (the only path while branding.py is not filled in).
+        self.advanced = not branding.simple_setup()
+        settings['hosting'] = 'cloudinary' if self.advanced else 'service'
+        if not self.advanced: settings['login_kind'] = branding.DEFAULT_LOGIN_KIND
         self.steps = self.make_steps(); self.index = 0
         outer = QVBoxLayout(self); outer.setContentsMargins(56, 28, 56, 28); outer.setSpacing(12)
         self.progress = QLabel(''); self.progress.setObjectName('progress'); outer.addWidget(self.progress, 0, Qt.AlignHCenter)
@@ -489,7 +509,14 @@ class SetupFlow(QDialog):
 
     def make_steps(self):
         s = self.settings; redirect = f'http://localhost:{ig.LOGIN_PORT}/'
-        token_path = lambda: self.use_token; app_path = lambda: not self.use_token
+        token_path = lambda: self.use_token or not self.advanced   # the developer screens: only on the advanced path, and not with a pasted token
+        app_path = lambda: not self.use_token
+        own_hosting = lambda: not self.advanced
+
+        def welcome_control():
+            box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0)
+            if branding.simple_setup(): col.addWidget(self.link('Advanced: use my own Meta app and hosting account', self.choose_advanced), 0, Qt.AlignHCenter)
+            return box
 
         def login_kind_control():
             box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0); col.setSpacing(12)
@@ -513,7 +540,10 @@ class SetupFlow(QDialog):
             self.code_edit.returnPressed.connect(self.use_code); col.addWidget(self.code_edit)
             links = QHBoxLayout(); links.addStretch(1)
             links.addWidget(self.link('The browser ended on an error page', lambda: (self.code_edit.show(), self.code_edit.setFocus())))
-            links.addWidget(self.link('Paste a token instead', self.choose_token)); links.addStretch(1); col.addLayout(links); return box
+            links.addWidget(self.link('Paste a token instead', self.choose_token)); links.addStretch(1); col.addLayout(links)
+            if not self.advanced:
+                self.kind_link = self.link('', self.toggle_kind); col.addWidget(self.kind_link, 0, Qt.AlignHCenter); self.update_kind_link()
+            return box
 
         def token_control():
             box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0); col.setSpacing(10)
@@ -540,13 +570,16 @@ class SetupFlow(QDialog):
 
         return [
             Step('welcome', "Let's set up PostQueue",
+                 'Two things: sign in to Instagram, and pick your usual posting time. Then you only ever drop in photos and pick a date.'
+                 if not self.advanced else
                  'Three things, one at a time: your Instagram account, a place to host your photos, and your usual posting time. '
-                 'About fifteen minutes the first time, then you only ever drop in photos and pick a date.', primary='Start'),
+                 'About fifteen minutes the first time, then you only ever drop in photos and pick a date.', build=welcome_control, primary='Start'),
             Step('professional', 'Use a professional Instagram account',
                  'In the Instagram app: Settings › Account type and tools › Switch to professional account. Business or Creator, both are free.',
-                 hint='Already professional? Just carry on.', primary='Done, next'),
+                 hint='Already professional? Just carry on. For Facebook Login, the account also needs a linked Facebook Page: Instagram › Settings › Business tools › Connect a Facebook Page.',
+                 primary='Done, next'),
             Step('login_kind', 'How will you sign in?', 'Both work. Facebook Login needs the account linked to a Facebook Page '
-                 '(Instagram › Settings › Business tools › Connect a Facebook Page).', build=login_kind_control, primary=None),
+                 '(Instagram › Settings › Business tools › Connect a Facebook Page).', build=login_kind_control, primary=None, skip_if=lambda: not self.advanced),
             Step('create_app', 'Create a Meta app', 'Sign in with your Facebook account, click Create app, choose the Business type (or the Instagram use case), '
                  'and add the Instagram product. Keep the app in development mode.', build=open_meta_control, primary='I created it, next', skip_if=token_path),
             Step('app_id', 'Paste the App ID', 'In the app dashboard: App settings › Basic › App ID.',
@@ -563,25 +596,26 @@ class SetupFlow(QDialog):
                  'Instagram account under Instagram testers and accept the invitation in the Instagram app (Settings › Apps and websites › Tester invites).',
                  primary='Done, next', skip_if=token_path),
             Step('signin', 'Sign in', 'The browser opens Meta\'s sign-in. Approve it there, then come back here. This screen moves on by itself.',
-                 build=signin_control, primary='Sign in in the browser', on_next=self.sign_in, skip_if=token_path, enter=lambda: self.signin_status.setText('')),
+                 build=signin_control, primary='Sign in in the browser', on_next=self.sign_in, skip_if=lambda: self.use_token, enter=lambda: self.signin_status.setText('')),
             Step('token', 'Paste the access token', 'A Meta Business Suite system-user token (never expires), or a Graph API Explorer token with '
                  'instagram_basic and instagram_content_publish.', build=token_control, primary='Check token', on_next=self.check_token,
                  ready=lambda: bool(self.token_edit.text().strip()), skip_if=app_path),
             Step('account', 'Which account?', 'Several Instagram accounts were found. Choose the one to post as.', build=account_control,
                  on_next=lambda: self.pick_account(), skip_if=lambda: len(self.found_accounts) <= 1, enter=self.fill_accounts),
             Step('cloud_signup', 'Create a free Cloudinary account', 'Instagram fetches each photo from a link, so PostQueue needs somewhere to host it for a moment. '
-                 'Cloudinary\'s free plan is far more than a personal queue needs.', build=open_cloudinary_control, primary='I have an account, next'),
+                 'Cloudinary\'s free plan is far more than a personal queue needs.', build=open_cloudinary_control, primary='I have an account, next', skip_if=own_hosting),
             Step('cloud_name', 'Paste the Cloud name', 'Cloudinary console › Settings › API Keys (or the dashboard\'s Product environment credentials).',
-                 build=lambda: self.field('cloud_edit', 'Cloud name', text=s.get('cloudinary_cloud', '')), ready=lambda: bool(self.cloud_edit.text().strip()), on_next=lambda: self.save_hosting()),
+                 build=lambda: self.field('cloud_edit', 'Cloud name', text=s.get('cloudinary_cloud', '')), ready=lambda: bool(self.cloud_edit.text().strip()), on_next=lambda: self.save_hosting(), skip_if=own_hosting),
             Step('api_key', 'Paste the API key', 'From the same Cloudinary page.',
-                 build=lambda: self.field('ckey_edit', 'API key', text=s.get('cloudinary_api_key', '')), ready=lambda: bool(self.ckey_edit.text().strip()), on_next=lambda: self.save_hosting()),
+                 build=lambda: self.field('ckey_edit', 'API key', text=s.get('cloudinary_api_key', '')), ready=lambda: bool(self.ckey_edit.text().strip()), on_next=lambda: self.save_hosting(), skip_if=own_hosting),
             Step('api_secret', 'Paste the API secret', 'From the same Cloudinary page (click to reveal it).',
-                 build=lambda: self.field('csecret_edit', 'API secret', password=True, text=s.get('cloudinary_api_secret', '')), ready=lambda: bool(self.csecret_edit.text().strip()), on_next=lambda: self.save_hosting()),
+                 build=lambda: self.field('csecret_edit', 'API secret', password=True, text=s.get('cloudinary_api_secret', '')), ready=lambda: bool(self.csecret_edit.text().strip()), on_next=lambda: self.save_hosting(), skip_if=own_hosting),
             Step('test_hosting', 'Test the hosting', 'PostQueue uploads a tiny test image and removes it again. This screen moves on when it works.',
-                 build=test_control, primary='Test hosting', on_next=self.test_hosting, skippable=True, enter=lambda: self.hosting_status.setText('')),
+                 build=test_control, primary='Test hosting', on_next=self.test_hosting, skippable=True, enter=lambda: self.hosting_status.setText(''), skip_if=own_hosting),
             Step('time', 'When do you usually post?', 'Each photo you add is scheduled for the next free day at this time. You can change any of them.',
                  build=time_control, on_next=lambda: self.save_time()),
-            Step('startup', 'Start PostQueue when you sign in?', 'Posts only go out while PostQueue is running, so this is the safe choice.', build=startup_control, primary=None),
+            Step('startup', 'Start PostQueue when you sign in?', 'Posts only go out while PostQueue is running, so this is the safe choice.', build=startup_control, primary=None,
+                 skip_if=lambda: not self.advanced),
             Step('done', 'All set', f'Drop photos or videos onto the window and pick a date for each. Closing the window keeps PostQueue running in {TRAY_NAME}.',
                  primary='Start using PostQueue'),
         ]
@@ -629,6 +663,15 @@ class SetupFlow(QDialog):
     # --- choices and actions --------------------------------------------------------------------------------------
     def choose_login(self, kind): self.use_token = False; self.settings['login_kind'] = kind; self.settings.save(); self.advance()
     def choose_token(self): self.use_token = True; self.goto('token')
+
+    def choose_advanced(self):
+        self.advanced = True; self.settings['hosting'] = 'cloudinary'; self.settings.save(); self.advance()
+
+    def toggle_kind(self):
+        self.settings['login_kind'] = 'instagram' if self.settings.get('login_kind') == 'facebook' else 'facebook'; self.settings.save(); self.update_kind_link()
+
+    def update_kind_link(self):
+        self.kind_link.setText('Use Instagram Login instead (no Facebook Page)' if self.settings.get('login_kind') == 'facebook' else 'Use Facebook Login instead')
     def choose_startup(self, on): self.settings['start_with_windows'] = bool(on); self.settings.save(); self.advance()
 
     def save_app(self):
@@ -651,8 +694,10 @@ class SetupFlow(QDialog):
         self.task.done.connect(ok); self.task.failed.connect(bad); self.task.start()
 
     def sign_in(self):
-        kind, app_id, secret, version = self.settings.get('login_kind', 'facebook'), self.settings.get('app_id', ''), self.settings.get('app_secret', ''), self.settings.get('api_version')
-        self.run_task(lambda: ig.run_login(kind, app_id, secret, version, cancelled=lambda: self.cancelled), self.token_received, self.signin_status,
+        kind, version = self.settings.get('login_kind', 'facebook'), self.settings.get('api_version')
+        if self.advanced: app_id, secret, service = self.settings.get('app_id', ''), self.settings.get('app_secret', ''), ''
+        else: app_id, secret, service = branding.META_APP_ID, '', branding.SERVICE_URL
+        self.run_task(lambda: ig.run_login(kind, app_id, secret, version, cancelled=lambda: self.cancelled, service_url=service), self.token_received, self.signin_status,
                       'Waiting for the browser… approve the sign-in there, then come back here.')
         return False
 
@@ -702,12 +747,13 @@ class SetupFlow(QDialog):
         self.settings.save()
 
     def test_hosting(self):
-        try: provider = hosting.make_provider(self.settings) or hosting.Cloudinary('', '', '')
+        try: provider = hosting.make_provider(self.settings, branding.SERVICE_URL) or hosting.Cloudinary('', '', '')
         except hosting.HostingError as exc: self.hosting_status.setText(str(exc)); return False
         self.run_task(provider.test, lambda url: (self.hosting_status.setText('Hosting works.'), QTimer.singleShot(700, self.advance)), self.hosting_status, 'Uploading a test image…')
         return False
 
     def accept(self):
+        if self.settings.get('start_with_windows') is None: self.settings['start_with_windows'] = True   # the simple path does not ask
         self.settings['setup_done'] = True; self.settings.save(); super().accept()
 
 
@@ -948,7 +994,7 @@ class MainWindow(QMainWindow):
         instagram = None
         if self.settings.connected():
             instagram = ig.Instagram(self.settings['access_token'], self.settings['ig_user_id'], self.settings.get('api_host'), self.settings.get('api_version'))
-        return instagram, hosting.make_provider(self.settings)
+        return instagram, hosting.make_provider(self.settings, branding.SERVICE_URL)
 
     def set_paused(self, paused):
         self.settings['paused'] = bool(paused); self.settings.save(); self.act_pause.setText('Resume posting' if paused else 'Pause posting'); self.update_next()
@@ -995,15 +1041,15 @@ class MainWindow(QMainWindow):
 
     def update_banner(self):
         problems = []
-        if not self.settings.connected(): problems.append('connect your Instagram account')
-        if not self.settings.hosting_ready(): problems.append('set up media hosting (Instagram fetches photos from a public link)')
+        if not self.settings.connected(): problems.append('sign in to Instagram')
+        if not self.settings.hosting_ready(branding.SERVICE_URL): problems.append('set up media hosting (Instagram fetches photos from a public link)')
         expiry = self.settings.token_expiry()
         if not problems and expiry and expiry - eng.now_local() < dt.timedelta(days=7):
             problems.append(f'the Instagram sign-in expires on {expiry:%d %b}; sign in again in Settings')
         self.banner.setVisible(bool(problems))
         if problems:
             self.banner_text.setText('Before posts can go out: ' + '; '.join(problems) + '.')
-            self.banner_button.setText('Finish setup' if not self.settings.ready() else 'Open Settings')
+            self.banner_button.setText('Finish setup' if not self.settings.ready(branding.SERVICE_URL) else 'Open Settings')
         text = f'@{self.settings["ig_username"]}' if self.settings.connected() and self.settings.get('ig_username') else ('Connected' if self.settings.connected() else 'Not connected')
         self.account_label.setText(text)
 
@@ -1024,11 +1070,11 @@ class MainWindow(QMainWindow):
         if self.current and self.current.permalink: QDesktopServices.openUrl(QUrl(self.current.permalink))
 
     # --- setup, settings, tray, lifecycle -------------------------------------------------------------------------
-    def needs_setup(self): return not self.settings.get('setup_done') and not self.settings.ready()
+    def needs_setup(self): return not self.settings.get('setup_done') and not self.settings.ready(branding.SERVICE_URL)
 
     def open_setup(self):
-        """The first-run wizard (one decision per screen); the settings dialog once set-up is complete."""
-        if self.settings.ready(): return self.open_settings()
+        """The first-run flow (one thing per screen); the settings dialog once set-up is complete."""
+        if self.settings.ready(branding.SERVICE_URL): return self.open_settings()
         flow = SetupFlow(self.settings, self); flow.exec()
         self.settings.save(); self.refresh(); self.apply_startup_setting()
 

@@ -1,6 +1,6 @@
 # PostQueue 1.0: building and testing the package
 
-This guide covers producing and testing the Windows package (sections 1 to 6) and the macOS package (section 7): the build machine, the build steps, signing, the installer, and the tests that show a build is good. It follows the same packaging guideline as Local AI Manager. For what the app does, see `docs/USER_GUIDE.md`.
+This guide covers producing and testing the Windows package (sections 1 to 6), the one-time publishing setup that gives users the simple sign-in (section 7), and the macOS package (section 8): the build machine, the build steps, signing, the installer, and the tests that show a build is good. It follows the same packaging guideline as Local AI Manager. For what the app does, see `docs/USER_GUIDE.md`.
 
 Each build produces, in `dist\`, with `NAME = PostQueue-<version>-<arch>`:
 
@@ -94,7 +94,18 @@ Unsigned builds work, but SmartScreen warns, some antivirus products flag them, 
 | The release tests' "Second launch restores open window" fails | The first instance watches for `show.request` in its data folder every 1.5 s and the second launch also calls `ShowWindow`; a very slow PC may need the 2.5 s wait in the script raised. |
 | Photos post but videos fail with "unsupported format" | Instagram wants MP4/MOV with H.264 video and AAC audio. Re-encode (for example with HandBrake) and add the file again. |
 
-## 7. macOS
+## 7. Publishing setup: the built-in Meta app and service
+
+Out of the box, PostQueue's setup is the **advanced** path: the user creates their own Meta app and Cloudinary account (about fifteen screens). To ship the **simple** path, where the user only signs in and picks a posting time, do this once:
+
+1. **Register one Meta app** at <https://developers.facebook.com/apps/> (Business type; add the Instagram product and Facebook Login; redirect URI `http://localhost:48215/`). Note the App ID and App secret.
+2. **Deploy the PostQueue service** from `service\` (a Cloudflare Worker with R2 storage, free plan): `service\README.md` has the five commands. It holds the app secret, finishes the sign-in with a 60-day token, and hosts each photo for the moment Instagram needs it.
+3. **Fill in `branding.py`**: `META_APP_ID` and `SERVICE_URL`. Build. `branding.simple_setup()` is now true, so the setup flow shows three screens, Settings > Media hosting offers "PostQueue hosting (built in)", and the welcome screen keeps an **Advanced** link for people who want their own app and hosting.
+4. **App Review.** While the Meta app is in development mode, only its listed testers can sign in, which is enough for you and a few testers. For the public, submit the app for review with `instagram_basic`, `instagram_content_publish`, `pages_show_list` and `pages_read_engagement`, a privacy policy and a screen recording, and complete business verification.
+
+The environment variables `POSTQUEUE_META_APP_ID` and `POSTQUEUE_SERVICE_URL` override `branding.py` for a build or a test run without editing the file.
+
+## 8. macOS
 
 The same source builds `PostQueue.app` on a Mac. What differs is in `settings.py`: secrets go to the login keychain (items named `PostQueue <field>`, written with the `security` tool) instead of DPAPI, start at sign-in is a LaunchAgent (`~/Library/LaunchAgents/com.postqueue.app.plist`) instead of the Run entry, and the data folder is `~/Library/Application Support/PostQueue`. The tray icon lives in the menu bar; clicking the Dock icon brings the window back.
 
@@ -113,7 +124,7 @@ The script runs the tests, builds the app from `installer/PostQueue.spec` (`PQ_M
 
 **Run on a Mac through CI only.** The macOS build and release scripts were written on Windows and first ran on GitHub's Apple-silicon runner (see the test record): the tests pass there, the app and disk image build, and the release checks pass. The keychain, LaunchAgent and data-folder logic is also covered by the engine tests with the `security` tool and the home folder simulated. Nobody has yet opened the app on a real Mac desktop; do that before shipping a Mac build.
 
-## 8. Test record: 1.0.0, 2026-10-26
+## 9. Test record: 1.0.0, 2026-10-26
 
 Built and tested on an ARM64 Windows 11 PC (build 26300), without administrator rights. The source was mirrored to a short folder under `%TEMP%` for the build because the session folder was too deep for the zip and MSI steps.
 

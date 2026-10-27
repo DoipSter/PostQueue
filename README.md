@@ -14,7 +14,7 @@ Instagram's API has no file upload for photos and no built-in scheduling. So Pos
 2. at the scheduled minute, prepares the photo (shape, size, format), uploads it to the user's own media hosting account (Cloudinary, free tier) so Instagram can fetch it from a public link, creates and publishes the post, then removes the hosted copy;
 3. publishes videos as Reels the same way.
 
-One-time setup needs an Instagram professional account, a Meta app (for the sign-in) and a Cloudinary account. The user guide walks through all three.
+One-time setup, once `branding.py` names your Meta app and the deployed PostQueue service (`service\`, a Cloudflare Worker that finishes the sign-in and hosts each photo for a moment), is three screens: professional account, sign in, posting time. Without them, the app falls back to the advanced path, where the user creates their own Meta app and Cloudinary account. `BUILD_AND_TEST_GUIDE.md` section 7 explains the publishing setup.
 
 ## Project layout
 
@@ -23,7 +23,8 @@ One-time setup needs an Instagram professional account, a Meta app (for the sign
 | `PostQueue.pyw`, `app.py` | Entry point and the Qt interface (queue, details pane, tray icon, first-run wizard, settings dialog, scheduler timer) |
 | `engine.py` | The queue (`posts.json` and media copies), timing rules, photo preparation, publishing steps and retries |
 | `instagram.py` | Graph API client (Facebook Login and Instagram Login hosts), token exchange, browser sign-in receiver |
-| `hosting.py` | Cloudinary uploads (signed, chunked for large videos) and removal |
+| `hosting.py` | Media hosting: the PostQueue service, or Cloudinary uploads (signed, chunked for large videos), and removal |
+| `branding.py`, `service\` | The built-in Meta app ID and service address, and the service itself (Cloudflare Worker: token exchange, temporary media hosting, hourly cleanup) |
 | `settings.py` | Settings file with protected secrets (DPAPI on Windows, keychain on macOS), data folder, start at sign-in (Run entry or LaunchAgent), single-instance lock |
 | `version.py` | Product version (the single source) |
 | `tests\` | Engine and interface tests (pytest, no network), `release\Test-Release.ps1` and `release\test-release-macos.sh` for release builds |

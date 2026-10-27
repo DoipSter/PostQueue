@@ -383,6 +383,64 @@ def test_hosting_errors(monkeypatch):
     assert hosting.make_provider({'hosting': 'cloudinary', 'cloudinary_cloud': 'c', 'cloudinary_api_key': 'k', 'cloudinary_api_secret': 's'}).name == 'Cloudinary'
 
 
+def test_postqueue_service_upload_and_delete(monkeypatch, tmp_path):
+    sent = []
+    def fake_urlopen(req, timeout=0):
+        sent.append(req)
+        if req.get_method() == 'PUT': return Reply(b'{"id": "abc.jpg", "url": "https://svc.example/m/abc.jpg"}')
+        return Reply(b'{"ok": true}')
+    monkeypatch.setattr(urllib.request, 'urlopen', fake_urlopen)
+    svc = hosting.PostQueueService('https://svc.example/', 'TOK')
+    url, handle = svc.upload(make_image(tmp_path / 'p.jpg'), 'image')
+    assert url == 'https://svc.example/m/abc.jpg' and handle == 'abc.jpg'
+    assert sent[0].full_url == 'https://svc.example/media' and sent[0].get_header('Authorization') == 'Bearer TOK' and sent[0].get_header('X-file-name') == 'p.jpg'
+    assert sent[0].get_header('Content-type') == 'image/jpeg'
+    svc.delete(handle, 'image'); assert sent[1].get_method() == 'DELETE' and sent[1].full_url == 'https://svc.example/media/abc.jpg'
+    assert svc.test().startswith('https://')
+    monkeypatch.setattr(hosting, 'SERVICE_LIMIT', 10)
+    with pytest.raises(hosting.HostingError, match='up to 95 MB'): svc.upload(tmp_path / 'p.jpg', 'image')
+    def refused(req, timeout=0): raise urllib.error.HTTPError(req.full_url, 401, 'Unauthorized', {}, io.BytesIO(b'{"error": "Sign in to Instagram first."}'))
+    monkeypatch.setattr(urllib.request, 'urlopen', refused)
+    with pytest.raises(hosting.HostingError, match='did not accept the Instagram sign-in') as e: svc.test()
+    assert not e.value.transient
+    with pytest.raises(hosting.HostingError): hosting.PostQueueService('', 'TOK')
+
+
+def test_make_provider_picks_the_service_when_configured():
+    s = {'hosting': 'service', 'access_token': 'TOK'}
+    assert hosting.make_provider(s, 'https://svc.example').name == 'PostQueue hosting'
+    assert hosting.make_provider(s, '') is None and hosting.make_provider({'hosting': 'service'}, 'https://svc.example') is None
+    assert hosting.make_provider({'hosting': 'cloudinary', 'cloudinary_cloud': 'c', 'cloudinary_api_key': 'k', 'cloudinary_api_secret': 's'}, 'https://svc.example').name == 'Cloudinary'
+
+
+def test_settings_ready_with_service(tmp_path):
+    s = cfg.Settings(tmp_path / 's.json'); s['access_token'] = 't'; s['ig_user_id'] = '1'
+    assert s['hosting'] == 'service' and not s.hosting_ready() and s.hosting_ready('https://svc') and s.ready('https://svc') and not s.ready()
+
+
+def test_service_exchange(monkeypatch):
+    sent = []
+    monkeypatch.setattr(urllib.request, 'urlopen', lambda req, timeout=0: (sent.append(req), Reply(b'{"access_token": "LONG", "expires_in": 5184000}'))[1])
+    assert ig.service_exchange('https://svc.example/', 'facebook', token='SHORT') == ('LONG', 5184000)
+    assert sent[0].full_url == 'https://svc.example/token' and json.loads(sent[0].data)['token'] == 'SHORT' and json.loads(sent[0].data)['kind'] == 'facebook'
+    def bad(req, timeout=0): raise urllib.error.HTTPError(req.full_url, 502, 'Bad', {}, io.BytesIO(b'{"error": "Meta replied 400"}'))
+    monkeypatch.setattr(urllib.request, 'urlopen', bad)
+    with pytest.raises(ig.InstagramError, match='could not finish the sign-in: Meta replied 400'): ig.service_exchange('https://svc.example', 'facebook', token='x')
+    monkeypatch.setattr(urllib.request, 'urlopen', lambda req, timeout=0: (_ for _ in ()).throw(urllib.error.URLError('offline')))
+    with pytest.raises(ig.InstagramError, match='Could not reach') as e: ig.service_exchange('https://svc.example', 'facebook', token='x')
+    assert e.value.transient
+
+
+def test_run_login_uses_the_service_for_the_exchange(monkeypatch):
+    calls = []
+    monkeypatch.setattr(ig, 'service_exchange', lambda url, kind, token=None, code=None, redirect=None: (calls.append((url, kind, token, code)), ('LONG', 5184000))[1])
+    def opener(url):
+        q = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(url).query)); port = urllib.parse.urlparse(q['redirect_uri']).port
+        urllib.request.urlopen(f'http://127.0.0.1:{port}/done?access_token=SHORT&state={q["state"]}', timeout=5).read()
+    assert ig.run_login('facebook', '123', '', opener=opener, service_url='https://svc.example')[:2] == ('LONG', 5184000)
+    assert calls == [('https://svc.example', 'facebook', 'SHORT', None)]
+
+
 # --- Instagram client --------------------------------------------------------------------------------------------
 class Reply(io.BytesIO):
     status = 200

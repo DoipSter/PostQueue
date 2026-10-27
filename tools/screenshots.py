@@ -96,6 +96,18 @@ def main(out):
     shoot('time', [(flow.time_edit, 1), (flow.primary, 2)]); flow.next()
     shoot('startup', [(flow.step().page.findChildren(ui.QPushButton)[0], 1), (flow.step().page.findChildren(ui.QPushButton)[1], 2)]); flow.choose_startup(True)
     shoot('done', [(flow.primary, 1)])
+    # The simple path, with the built-in Meta app and service configured
+    ui.branding.META_APP_ID, ui.branding.SERVICE_URL = '424242', 'https://postqueue.example.workers.dev'
+    simple = cfg.Settings(data / 'simple.json'); flow = ui.SetupFlow(simple, window); flow.setAttribute(Qt.WA_DontShowOnScreen, True); flow.show(); app.processEvents()
+    def shoot_simple(name, items=()):
+        app.processEvents(); shot = flow.grab(); shot.save(str(out / f'simple-{name}.png')); annotate(flow, shot, items, out / f'guide-simple-{name}.png')
+    shoot_simple('welcome', [(flow.primary, 1), (flow.step().page.findChildren(ui.QPushButton)[0], 2)]); flow.next()
+    shoot_simple('professional', [(flow.primary, 1)]); flow.next()
+    shoot_simple('sign-in', [(flow.primary, 1), (flow.kind_link, 2)])
+    simple.update({'access_token': 'x', 'ig_user_id': '1', 'ig_username': 'studio.north'}); flow.found_accounts = [{'id': '1', 'username': 'studio.north'}]; flow.advance()
+    shoot_simple('time', [(flow.time_edit, 1), (flow.primary, 2)]); flow.next()
+    shoot_simple('done', [(flow.primary, 1)])
+    ui.branding.META_APP_ID, ui.branding.SERVICE_URL = '', ''
     if window.tray: window.tray.hide()
     print('wrote', sorted(p.name for p in out.iterdir()))
 

@@ -22,7 +22,7 @@ def qapp():
 @pytest.fixture
 def settings(tmp_path):
     s = cfg.Settings(tmp_path / 'settings.json')
-    s.update({'access_token': 'tok', 'ig_user_id': '178', 'ig_username': 'shop', 'cloudinary_cloud': 'c', 'cloudinary_api_key': 'k', 'cloudinary_api_secret': 's',
+    s.update({'access_token': 'tok', 'ig_user_id': '178', 'ig_username': 'shop', 'hosting': 'cloudinary', 'cloudinary_cloud': 'c', 'cloudinary_api_key': 'k', 'cloudinary_api_secret': 's',
               'start_with_windows': False, 'close_to_tray': False, 'default_hour': 9, 'default_minute': 30})
     s.save(); return s
 
@@ -67,7 +67,7 @@ def test_window_starts_empty_with_account_shown(window):
 
 def test_setup_banner_when_not_connected(window):
     window.settings['access_token'] = ''; window.settings['cloudinary_cloud'] = ''; window.refresh()
-    assert window.banner.isVisible() and 'connect your Instagram account' in window.banner_text.text() and 'media hosting' in window.banner_text.text()
+    assert window.banner.isVisible() and 'sign in to Instagram' in window.banner_text.text() and 'media hosting' in window.banner_text.text()
     assert window.account_label.text() == 'Not connected'
 
 
@@ -199,7 +199,7 @@ def test_test_hosting_reports(window, qapp, monkeypatch):
     class Good:
         name = 'Cloudinary'
         def test(self): return 'https://ok'
-    monkeypatch.setattr(ui.hosting, 'make_provider', lambda s: Good())
+    monkeypatch.setattr(ui.hosting, 'make_provider', lambda s, url='': Good())
     dialog = ui.SettingsDialog(window.settings, window); dialog.hosting.findChild(ui.QPushButton, 'test_hosting').click()
     assert wait_until(lambda: 'Hosting works' in dialog.hosting.status.text())
 
@@ -212,12 +212,12 @@ def fresh_settings(window):
 
 def test_setup_flow_one_thing_per_screen(window, qapp, monkeypatch):
     s = fresh_settings(window); assert window.needs_setup()
-    monkeypatch.setattr(ui.ig, 'run_login', lambda kind, app_id, secret, version, cancelled: ('LONG', 5184000, 'http://localhost:48215/'))
+    monkeypatch.setattr(ui.ig, 'run_login', lambda kind, app_id, secret, version, cancelled, service_url='': ('LONG', 5184000, 'http://localhost:48215/'))
     monkeypatch.setattr(ui.ig, 'accounts_for_token', lambda token, version: [{'id': '9', 'username': 'wiz', 'host': ui.ig.FB_HOST, 'via': 'Page'}])
     class Good:
         name = 'Cloudinary'
         def test(self): return 'https://ok'
-    monkeypatch.setattr(ui.hosting, 'make_provider', lambda st: Good())
+    monkeypatch.setattr(ui.hosting, 'make_provider', lambda st, url='': Good())
     flow = ui.SetupFlow(s, window); flow.show(); qapp.processEvents()
     keys = []
     def at(key):
@@ -257,6 +257,49 @@ def test_setup_flow_token_shortcut_and_account_choice(window, qapp, monkeypatch)
     monkeypatch.setattr(ui.ig, 'accounts_for_token', lambda token, version: (_ for _ in ()).throw(ui.ig.InstagramError('Invalid OAuth access token', code=190)))
     flow.goto('token'); flow.token_edit.setText('BAD'); flow.next()
     assert wait_until(lambda: flow.task is None and 'expired' in flow.token_status.text()) and flow.step().key == 'token'
+
+
+def test_setup_flow_simple_path_with_built_in_app(window, qapp, monkeypatch):
+    """With branding.py filled in, setup is: professional account, sign in, posting time. No developer screens."""
+    s = fresh_settings(window); s['start_with_windows'] = None
+    monkeypatch.setattr(ui.branding, 'META_APP_ID', '424242'); monkeypatch.setattr(ui.branding, 'SERVICE_URL', 'https://svc.example')
+    seen = {}
+    def fake_login(kind, app_id, secret, version, cancelled, service_url=''):
+        seen.update(kind=kind, app_id=app_id, secret=secret, service_url=service_url); return ('LONG', 5184000, 'http://localhost:48215/')
+    monkeypatch.setattr(ui.ig, 'run_login', fake_login)
+    monkeypatch.setattr(ui.ig, 'accounts_for_token', lambda token, version: [{'id': '9', 'username': 'wiz', 'host': ui.ig.FB_HOST, 'via': 'Page'}])
+    flow = ui.SetupFlow(s, window); flow.show(); qapp.processEvents()
+    assert not flow.advanced and s['hosting'] == 'service' and 'Two things' in flow.step().lead
+    flow.next(); assert flow.step().key == 'professional' and flow.progress.text() == 'STEP 1 OF 3'
+    flow.next(); assert flow.step().key == 'signin' and flow.progress.text() == 'STEP 2 OF 3'   # no login-kind or Meta app screens
+    flow.kind_link.click(); assert s['login_kind'] == 'instagram' and 'Facebook' in flow.kind_link.text(); flow.kind_link.click(); assert s['login_kind'] == 'facebook'
+    flow.next()
+    assert wait_until(lambda: flow.step().key == 'time') and s.connected()
+    assert seen == {'kind': 'facebook', 'app_id': '424242', 'secret': '', 'service_url': 'https://svc.example'}   # the built-in app, the service does the exchange
+    flow.next(); assert flow.step().key == 'done'                                                                 # hosting and start-up screens skipped
+    flow.next()
+    again = cfg.Settings(s.path)
+    assert again['setup_done'] and again['start_with_windows'] is True and again['hosting'] == 'service' and again.ready('https://svc.example')
+    window.refresh(); assert not window.needs_setup() and not window.banner.isVisible()
+
+
+def test_setup_flow_advanced_link_restores_developer_path(window, qapp, monkeypatch):
+    s = fresh_settings(window)
+    monkeypatch.setattr(ui.branding, 'META_APP_ID', '424242'); monkeypatch.setattr(ui.branding, 'SERVICE_URL', 'https://svc.example')
+    flow = ui.SetupFlow(s, window); flow.show(); qapp.processEvents()
+    link = [b for b in flow.step().page.findChildren(ui.QPushButton) if 'Advanced' in b.text()]; assert len(link) == 1
+    link[0].click(); assert flow.advanced and s['hosting'] == 'cloudinary' and flow.step().key == 'professional'
+    flow.next(); assert flow.step().key == 'login_kind' and flow.progress.text().endswith('OF 15')
+
+
+def test_hosting_panel_offers_the_built_in_service(window, monkeypatch):
+    monkeypatch.setattr(ui.branding, 'SERVICE_URL', 'https://svc.example')
+    window.settings['hosting'] = 'service'
+    panel = ui.HostingPanel(window.settings)
+    assert panel.mode.count() == 2 and panel.mode.currentData() == 'service' and not panel.cloud_group.isVisibleTo(panel) and panel.is_ready()
+    panel.mode.setCurrentIndex(1); assert window.settings['hosting'] == 'cloudinary' and panel.cloud_group.isVisibleTo(panel) and panel.is_ready()   # cloud details were in the fixture
+    monkeypatch.setattr(ui.branding, 'SERVICE_URL', '')
+    assert ui.HostingPanel(window.settings).mode.count() == 1
 
 
 def test_date_picker_has_calendar_and_time(window, tmp_path):

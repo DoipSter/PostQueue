@@ -177,6 +177,23 @@ def long_lived(kind, app_id, app_secret, token, version=DEFAULT_VERSION):
     return r['access_token'], r.get('expires_in')
 
 
+def service_exchange(service_url, kind, token=None, code=None, redirect=None):
+    """Long-lived token through the PostQueue service, which holds the app secret (service/ in the repository)."""
+    body = json.dumps({'kind': kind, 'token': token, 'code': code, 'redirect': redirect}).encode('utf-8')
+    req = urllib.request.Request(service_url.rstrip('/') + '/token', data=body, method='POST', headers={'Content-Type': 'application/json', 'User-Agent': 'PostQueue'})
+    try:
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as r: text, status = r.read().decode('utf-8', 'replace'), r.status
+    except urllib.error.HTTPError as e:
+        text, status = e.read().decode('utf-8', 'replace'), e.code
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        raise InstagramError(f'Could not reach the PostQueue service to finish the sign-in: {getattr(e, "reason", e)}', code=2)
+    try: payload = json.loads(text) if text else {}
+    except ValueError: raise InstagramError(f'Unexpected reply from the PostQueue service (HTTP {status}).', http_status=status)
+    if status >= 400 or 'access_token' not in payload:
+        raise InstagramError(f'The PostQueue service could not finish the sign-in: {payload.get("error") or text[:200]}', http_status=status)
+    return payload['access_token'], payload.get('expires_in')
+
+
 def refresh_instagram(token):
     """Extend an Instagram Login long-lived token by another 60 days (it must be at least a day old and still valid)."""
     r = request('GET', f'https://{IG_HOST}/refresh_access_token', {'grant_type': 'ig_refresh_token', 'access_token': token})
@@ -221,9 +238,10 @@ class LoginServer:
         self.server.shutdown(); self.server.server_close()
 
 
-def run_login(kind, app_id, app_secret='', version=DEFAULT_VERSION, opener=webbrowser.open, timeout=300, cancelled=lambda: False):
+def run_login(kind, app_id, app_secret='', version=DEFAULT_VERSION, opener=webbrowser.open, timeout=300, cancelled=lambda: False, service_url=''):
     """Open the browser for Meta's sign-in and wait for the reply. Returns (token, expires_in seconds or None,
-    redirect URL used). Raises InstagramError when the sign-in fails, is cancelled, or needs the app secret."""
+    redirect URL used). The long-lived exchange goes through the PostQueue service when `service_url` is set,
+    otherwise through the app secret when given. Raises InstagramError when the sign-in fails or is cancelled."""
     if not app_id: raise InstagramError('Enter the Meta app ID first.')
     server, state = LoginServer(), secrets.token_urlsafe(16)
     try:
@@ -237,6 +255,9 @@ def run_login(kind, app_id, app_secret='', version=DEFAULT_VERSION, opener=webbr
         server.close()
     if result.get('state') != state: raise InstagramError('The sign-in reply did not belong to this request. Try again.')
     if 'error' in result: raise InstagramError(result.get('error_description') or result.get('error_reason') or result['error'])
+    if service_url:
+        token, expires = service_exchange(service_url, kind, token=result.get('access_token'), code=result.get('code', '').split('#')[0] or None, redirect=server.redirect)
+        return token, (int(expires) if expires else None), server.redirect
     if 'access_token' in result:
         token, expires = result['access_token'], result.get('expires_in')
     else:
