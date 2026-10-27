@@ -1,8 +1,3 @@
----
-title: Delete your data
-permalink: /data-deletion/
----
-
 # Deleting your PostQueue data
 
 Last updated: 27 October 2026.

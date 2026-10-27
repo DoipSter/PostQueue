@@ -1,7 +1,0 @@
-# GitHub Pages for the docs folder (repository Settings > Pages > Deploy from a branch > main, /docs).
-# Pages are served at https://doipster.github.io/PostQueue/ : privacy/, data-deletion/, USER_GUIDE/, walkthrough/.
-title: PostQueue
-description: Posts your photos and videos to Instagram on a schedule, from your own PC or Mac.
-theme: jekyll-theme-minimal
-show_downloads: false
-permalink: pretty

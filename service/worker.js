@@ -5,10 +5,13 @@
  *   PUT  /media        host a photo or video for the moment it takes Instagram to fetch it (R2 storage)
  *   GET  /m/<id>       the public link Instagram fetches
  *   DELETE /media/<id> remove the file right after posting (an hourly job removes anything older than a day)
+ *   GET  /privacy, /data-deletion   the privacy policy and the data deletion page (pages.js, generated from docs/)
  *
  * Only holders of a valid token for *this* Meta app may upload or delete, so the storage cannot be used by anyone
  * else. Secrets: META_APP_ID and META_APP_SECRET (wrangler secret put). Binding: MEDIA (an R2 bucket).
  */
+import { PRIVACY, DATA_DELETION } from './pages.js';
+
 const GRAPH = 'https://graph.facebook.com';
 const IG_GRAPH = 'https://graph.instagram.com';
 const MAX_BYTES = 100 * 1024 * 1024;
@@ -21,6 +24,8 @@ export default {
     try {
       if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors() });
       if (path === '/' && request.method === 'GET') return json({ service: 'PostQueue', ok: true });
+      if (path === '/privacy' && request.method === 'GET') return page(PRIVACY);
+      if (path === '/data-deletion' && request.method === 'GET') return page(DATA_DELETION);
       if (path === '/token' && request.method === 'POST') return await token(request, env);
       if (path === '/media' && request.method === 'PUT') return await upload(request, env, url);
       if (path.startsWith('/m/') && request.method === 'GET') return await serve(path.slice(3), env);
@@ -48,6 +53,7 @@ const version = env => env.GRAPH_VERSION || 'v25.0';
 const cors = () => ({ 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET,PUT,POST,DELETE,OPTIONS', 'Access-Control-Allow-Headers': 'Authorization,Content-Type,X-File-Name' });
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...cors() } });
 const fail = (message, status) => { const e = new Error(message); e.status = status; return e; };
+const page = body => new Response(body, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'public, max-age=3600' } });
 
 async function graph(url, init) {
   const r = await fetch(url, init);

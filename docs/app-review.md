@@ -1,18 +1,13 @@
----
-title: Meta App Review notes
-permalink: /app-review/
----
-
 # Meta App Review: submission notes for PostQueue
 
 The built-in sign-in (the three-screen setup) uses one Meta app that ships inside PostQueue. While that app is in development mode, only its listed testers can sign in. For everyone else, Meta has to approve the app: that is **App Review**, and the publishing permission also needs **business verification**. This page is everything needed for the submission, in the order Meta asks for it. `BUILD_AND_TEST_GUIDE.md` section 7 describes the app and the service it depends on.
 
-Public addresses used below (GitHub Pages from the `docs` folder):
+Public addresses used below. The PostQueue service serves them, so they are live as soon as the Worker is deployed; `<SERVICE_URL>` is the service address from `branding.py`, for example `https://postqueue.<account>.workers.dev`. The pages are generated from `docs/privacy.md` and `docs/data-deletion.md` by `tools/make_pages.py` (run it after editing them, then `wrangler deploy`).
 
 | What Meta asks for | Address |
 |---|---|
-| Privacy Policy URL | <https://doipster.github.io/PostQueue/privacy/> |
-| User data deletion (instructions URL) | <https://doipster.github.io/PostQueue/data-deletion/> |
+| Privacy Policy URL | `<SERVICE_URL>/privacy` |
+| User data deletion (instructions URL) | `<SERVICE_URL>/data-deletion` |
 | Terms of Service URL (optional) | leave empty, or point at the repository's MIT licence: <https://github.com/DoipSter/PostQueue/blob/main/LICENSE> |
 
 ## 1. Before submitting

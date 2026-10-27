@@ -1,8 +1,3 @@
----
-title: Privacy policy
-permalink: /privacy/
----
-
 # PostQueue privacy policy
 
 Last updated: 27 October 2026.

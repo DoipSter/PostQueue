@@ -6,6 +6,7 @@ A single Cloudflare Worker that turns PostQueue from a developer tool into a pro
 |---|---|
 | `POST /token` | Finishes a Meta sign-in. It holds the Meta app secret and returns a 60-day token, so the secret never ships inside the program. |
 | `PUT /media`, `GET /m/<id>`, `DELETE /media/<id>` | Hosts a photo or video for the moment it takes Instagram to fetch it, then removes it. Anything left behind is deleted after a day by an hourly job. |
+| `GET /privacy`, `GET /data-deletion` | The privacy policy and the data deletion page, the two public addresses Meta's App Review asks for. `pages.js` holds them; `tools\make_pages.py` regenerates it from `docs\privacy.md` and `docs\data-deletion.md`. |
 
 Only holders of a valid token for *your* Meta app may upload or delete, so nobody else can use the storage. Cloudflare's free plan covers it: Workers (100,000 requests a day) and R2 (10 GB stored, 1 million writes a month). A personal queue uses a few megabytes for a few minutes at a time.
 
@@ -30,7 +31,7 @@ Create the app once at <https://developers.facebook.com/apps/> (Business type, a
 
 - **Valid OAuth Redirect URIs:** add `http://localhost:48215/`.
 - **App roles:** while the app is in development mode, only people listed under Roles (and Instagram testers) can sign in. That is enough to use PostQueue yourself and with a few testers.
-- **App Review:** for anyone else to sign in, submit the app for review with the permissions `instagram_basic`, `instagram_content_publish`, `pages_show_list` and `pages_read_engagement`, a privacy policy URL, and a short screen recording of the sign-in and a post. Business verification is required for the publishing permission. Until review is granted, the sign-in screen tells non-testers that the app is in development mode.
+- **App Review:** for anyone else to sign in, submit the app for review with the permissions `instagram_basic`, `instagram_content_publish`, `pages_show_list` and `pages_read_engagement`, a privacy policy URL, and a short screen recording of the sign-in and a post. Business verification is required for the publishing permission. Until review is granted, the sign-in screen tells non-testers that the app is in development mode. The privacy policy URL is `<service address>/privacy` and the data deletion URL is `<service address>/data-deletion`; `docs\app-review.md` has the full submission notes.
 
 ## Updating
 
