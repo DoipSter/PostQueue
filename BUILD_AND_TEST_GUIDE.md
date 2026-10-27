@@ -149,6 +149,7 @@ Built and tested on an ARM64 Windows 11 PC (build 26300), without administrator 
 | CI, Windows ARM64: GitHub `windows-11-arm`, run #3 at commit `f6645fd` | **Pass**: 66 tests, release tests 33 of 33. 3 min 53 s. The ARM64 runner serves this private repository. |
 | CI, macOS Apple silicon: GitHub `macos-latest`, run #3 at commit `f6645fd` | 66 tests pass, `PostQueue.app` and the DMG build, release tests **13 of 14**: "Clean quit removes lock" failed because the app did not handle SIGTERM (fixed after run #3: the app now closes cleanly on it). |
 | CI, run #4 at commit `94ab2b9`, all four jobs | **Pass** in 4 min 3 s overall: Windows x64 (2 min) and ARM64 (4 min) with 33 of 33 release checks each; macOS Apple silicon (1 min 38 s) and macOS Intel on `macos-15-intel` (3 min) with the app, DMG and zip built and **14 of 14** release checks each. Unsigned on all four, as no signing secrets are set. |
+| Pre-release `v1.0.0-rc1` at commit `39a4b49` (2026-10-27), run #19 | **Published**: the `release` job attached the four packages and their SHA-256 files to the GitHub Release, marked pre-release. 87 tests on every runner. The first attempt failed because the artifacts keep their `dist\` folder; fixed in the same commit the tag now points at. |
 
 **Found and fixed while testing:**
 - **Pillow's PyInstaller hook bundled numpy** (18 MB) and the requests stack; both are now excluded in the spec.
