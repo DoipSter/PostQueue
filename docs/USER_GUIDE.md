@@ -53,7 +53,7 @@ Photos are hosted for the moment it takes Instagram to fetch them by the PostQue
 - **Start PostQueue when I sign in:** the Windows installer turns this on; on a Mac, the setup steps ask. Needed for posts to go out on time. On Windows, turning it off here is the same as disabling "PostQueue Startup" in Task Manager's Startup apps; on a Mac it adds or removes a login item (a LaunchAgent). (With the portable EXE, tick it here.)
 - **Default posting time for new posts:** each file you add is scheduled for the next free day at this time.
 - **If the PC was off at the scheduled time, still post within…:** 12 hours by default. A post that is later than that is marked **Missed** instead of going out at an odd time; you can reschedule it or post it now.
-- **Photos outside Instagram's shape range:** Instagram accepts photos between 4:5 (portrait) and 1.91:1 (landscape). Others are cropped (centred) or given white borders. You can change this per photo.
+- **Photos outside Instagram's shape range:** Instagram accepts photos between 4:5 (portrait) and 1.91:1 (landscape). Others are cropped (centred) or given white borders. You can change this per photo, and the preview shows what will be cut off or where the borders go.
 
 ## 3. Advanced setup: your own Meta app and hosting
 
@@ -153,7 +153,7 @@ Press **Start using PostQueue** (1).
    ![The calendar](screenshots/guide-calendar.png)
 3. Write the **caption**, with #hashtags and @mentions. The counter under it warns when the caption is too long or has more than 30 hashtags.
 4. Click **Save changes** (Ctrl+S). The row's **Scheduled for** column updates.
-5. **Post now** publishes the selected post immediately instead of waiting. **Remove** takes it out of the queue (posts already on Instagram stay there).
+5. **Post now** publishes the selected post immediately instead of waiting (it asks first). **Remove** takes it out of the queue (posts already on Instagram stay there).
 6. The status bar shows the **next post**. Leave PostQueue running: closing the window keeps it in the notification area or menu bar. At the scheduled minute the post goes out, the row turns **Posted**, and **Open on Instagram** shows it.
 7. **Settings** is for later changes to the account, hosting and posting time.
 
@@ -163,7 +163,7 @@ PostQueue keeps its own copy of each file, so you can move or delete the origina
 
 - About 50 posts per account per 24 hours through the API (PostQueue reports the limit's error if it is reached).
 - Photos: JPEG, 4:5 to 1.91:1, up to 8 MB. PostQueue converts and resizes automatically.
-- Videos are posted as **Reels**: MP4/MOV, 3 seconds to 15 minutes, 9:16 recommended, up to 1 GB. Instagram processes the video after upload, which can take a few minutes.
+- Videos are posted as **Reels**: MP4/MOV, 3 seconds to 15 minutes, 9:16 recommended, up to 1 GB. PostQueue checks the length and shape as you add the file and says so under the preview. Instagram processes the video after upload, which can take a few minutes.
 - Captions: up to 2,200 characters, 30 hashtags, 20 @mentions.
 - Single photos and videos only; carousels (several photos in one post) and Stories are not in this version.
 

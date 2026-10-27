@@ -5,13 +5,13 @@ import time
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import pytest
 from PIL import Image
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 
 import app as ui
 import engine as eng
 import settings as cfg
-from test_engine import FakeInstagram, FakeProvider
+from test_engine import FakeInstagram, FakeProvider, make_mp4
 
 
 @pytest.fixture(scope='session')
@@ -100,6 +100,28 @@ def test_edit_caption_and_time_then_save(window, tmp_path):
     assert (reloaded.when_dt() - eng.now_local()).days >= 3
 
 
+def test_preview_shows_the_crop_or_the_borders(window, tmp_path):
+    window.add_paths([photo(tmp_path, size=(1000, 2000))])   # teal, too tall for Instagram; the preview is 400x800
+    assert window.preview.box == eng.target_box(400, 800, 'crop') == (0, 150, 400, 650) and 'top and bottom will be cropped off' in window.media_info.text()
+    shown = window.preview.render(QSize(200, 400)).toImage()
+    assert shown.pixelColor(100, 10).green() < 70 < shown.pixelColor(100, 200).green() == 128   # the top strip is dimmed, the middle is not
+    window.fit_combo.setCurrentIndex(1)
+    assert window.preview.box == (-120, 0, 520, 800) and 'white borders will be added at the sides' in window.media_info.text() and window.dirty
+    shown = window.preview.render(QSize(400, 400)).toImage()
+    assert shown.width() == 320 and shown.pixelColor(5, 200).lightness() == 255 and shown.pixelColor(160, 200).green() == 128   # white at the sides
+    window.add_paths([photo(tmp_path, 'fine.jpg', size=(1200, 900))])
+    assert window.preview.box == (0, 0, 800, 600) and 'posted whole' in window.media_info.text()
+
+
+def test_video_details_show_length_and_warn_about_shape(window, tmp_path, monkeypatch):
+    warned = []; monkeypatch.setattr(QMessageBox, 'warning', staticmethod(lambda *a, **k: warned.append(a[2])))
+    window.add_paths([str(make_mp4(tmp_path / 'wide.mp4', 30, (1920, 1080)))])
+    assert 'landscape' in window.media_info.text() and ui.WARN_STYLE in window.media_info.styleSheet() and not window.fit_combo.isVisible() and window.preview.box is None
+    window.add_paths([str(make_mp4(tmp_path / 'reel.mp4', 42, (1080, 1920)))])
+    assert window.media_info.text() == 'Video · 0:42 · 1080×1920 · posted as a Reel' and ui.MUTED_STYLE in window.media_info.styleSheet()
+    assert not window.add_paths([str(make_mp4(tmp_path / 'long.mp4', 20 * 60))]) and '15 minutes' in warned[0] and window.tree.topLevelItemCount() == 2
+
+
 def test_caption_warning_shown(window, tmp_path):
     window.add_paths([photo(tmp_path)]); window.caption.setPlainText(' '.join(f'#t{i}' for i in range(31)))
     assert 'allows 30' in window.caption_info.text()
@@ -115,6 +137,12 @@ def test_post_now_publishes_and_offers_link(window, tmp_path, fakes):
     assert window.result.isVisible() and window.result_text.text().startswith('✓ Posted pic.jpg to Instagram at') and window.result_open.isVisible()
     assert window.result_url.endswith('/1789/') and window.result.property('ok') == 'true'
     window.result_dismiss.click(); assert not window.result.isVisible()
+
+
+def test_post_now_asks_first(window, tmp_path, monkeypatch):
+    asked = []; monkeypatch.setattr(QMessageBox, 'question', staticmethod(lambda *a, **k: asked.append(a[2]) or QMessageBox.No))
+    window.add_paths([photo(tmp_path)]); post = window.current; window.post_now_button.click()
+    assert asked == ['Post pic.jpg to Instagram now?'] and post.status == 'queued' and window.worker is None
 
 
 def test_scheduler_posts_due_items_and_marks_missed(window, tmp_path, fakes):

@@ -4,6 +4,7 @@ import datetime as dt
 import io
 import json
 import os
+import struct
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -21,6 +22,26 @@ from engine import Engine, EngineError, Post
 def make_image(path, size=(1200, 800), mode='RGB', fmt=None):
     im = Image.new(mode, size, (200, 60, 90) if mode == 'RGB' else (200, 60, 90, 128))
     im.save(path, fmt); return Path(path)
+
+
+def atom(name, body): return struct.pack('>I4s', 8 + len(body), name) + body
+
+
+def make_mp4(path, seconds=10.0, size=(1080, 1920), rotated=False, moov_last=True, long_header=False, tkhd_size=True):
+    """A minimal MP4/MOV container with the header atoms PostQueue reads (ftyp, mvhd, tkhd, stsd) and a dummy mdat.
+    `rotated` writes a 90-degree track matrix as phones do; `long_header` uses the 64-bit variants; `tkhd_size`
+    False leaves the track header's size empty so the sample description has to be used."""
+    w, h = size; scale = 1000
+    if long_header: mvhd = b'\1\0\0\0' + b'\0' * 16 + struct.pack('>IQ', scale, int(seconds * scale)) + b'\0' * 80
+    else: mvhd = b'\0' * 12 + struct.pack('>II', scale, int(seconds * scale)) + b'\0' * 80
+    matrix = struct.pack('>9i', 0, 0x10000, 0, -0x10000, 0, 0, 0, 0, 0x40000000) if rotated else struct.pack('>9i', 0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000)
+    tkhd = b'\0' * 40 + matrix + (struct.pack('>II', w << 16, h << 16) if tkhd_size else b'\0' * 8)
+    stsd = atom(b'stsd', b'\0' * 4 + struct.pack('>I', 1) + atom(b'avc1', b'\0' * 24 + struct.pack('>HH', w, h) + b'\0' * 50))
+    trak = atom(b'trak', atom(b'tkhd', tkhd) + atom(b'mdia', atom(b'minf', atom(b'stbl', stsd))))
+    moov = atom(b'moov', atom(b'mvhd', mvhd) + trak)
+    mdat = struct.pack('>I4sQ', 1, b'mdat', 16 + 64) + b'\0' * 64 if long_header else atom(b'mdat', b'\0' * 64)
+    ftyp = atom(b'ftyp', b'isom' + b'\0' * 4 + b'isomiso2mp41')
+    Path(path).write_bytes(ftyp + (mdat + moov if moov_last else moov + mdat)); return Path(path)
 
 
 @pytest.fixture
@@ -141,6 +162,18 @@ def test_caption_warnings():
 
 # --- photos ------------------------------------------------------------------------------------------------------
 @pytest.mark.parametrize('size,fit,expected', [
+    ((1000, 2000), 'crop', (0, 375, 1000, 1625)),    # too tall: the middle 4:5 window is kept
+    ((1000, 2000), 'pad', (-300, 0, 1300, 2000)),    # too tall: white at both sides
+    ((3000, 1000), 'crop', (545, 0, 2455, 1000)),    # too wide: the middle 1.91:1 window
+    ((3000, 1000), 'pad', (0, -285, 3000, 1286)),    # too wide: white above and below
+    ((1200, 800), 'crop', (0, 0, 1200, 800)),        # fine as it is, whichever fit
+    ((1200, 800), 'pad', (0, 0, 1200, 800)),
+])
+def test_target_box(size, fit, expected):
+    assert eng.target_box(*size, fit) == expected
+
+
+@pytest.mark.parametrize('size,fit,expected', [
     ((1000, 2000), 'crop', (1000, 1250)),   # too tall: cropped to 4:5
     ((1000, 2000), 'pad', (1440, 1800)),    # too tall: padded to 4:5, then limited to 1440 wide
     ((3000, 1000), 'crop', (1440, 754)),    # too wide: cropped to 1.91:1 and scaled down
@@ -168,6 +201,30 @@ def test_prepare_image_stays_under_size_limit(tmp_path, monkeypatch):
     Image.effect_noise((1440, 1440), 100).convert('RGB').save(tmp_path / 'noise.png')   # noise barely compresses
     out = Engine.prepare_image(tmp_path / 'noise.png', tmp_path / 'out.jpg')
     with Image.open(out) as im: assert out.stat().st_size <= 120_000 and 320 <= im.width < 1440   # quality down, then shrunk
+
+
+# --- videos ------------------------------------------------------------------------------------------------------
+def test_video_info_reads_the_container_header(tmp_path):
+    info = eng.video_info(make_mp4(tmp_path / 'a.mp4', 42.5, (1080, 1920)))
+    assert info == {'seconds': 42.5, 'width': 1080, 'height': 1920} and eng.video_summary(info) == '0:42 · 1080×1920'
+    assert eng.video_info(make_mp4(tmp_path / 'b.mov', 7, (1920, 1080), moov_last=False, long_header=True)) == {'seconds': 7.0, 'width': 1920, 'height': 1080}
+    assert eng.video_info(make_mp4(tmp_path / 'c.mp4', 7, (1920, 1080), rotated=True))['width'] == 1080   # filmed on a phone held upright
+    assert eng.video_info(make_mp4(tmp_path / 'd.mp4', 7, (640, 480), tkhd_size=False)) == {'seconds': 7.0, 'width': 640, 'height': 480}
+    junk = tmp_path / 'junk.mp4'; junk.write_bytes(b'\0' * 100)
+    assert eng.video_info(junk) is None and eng.video_summary(None) == ''
+
+
+def test_add_checks_videos_right_away(engine, tmp_path, now):
+    with pytest.raises(EngineError, match='16 min 0 s long. Instagram Reels must be 15 minutes'): engine.add(make_mp4(tmp_path / 'long.mp4', 16 * 60), now)
+    with pytest.raises(EngineError, match='1.5 s long. Instagram Reels must be at least 3 seconds'): engine.add(make_mp4(tmp_path / 'short.mp4', 1.5), now)
+    assert engine.add(make_mp4(tmp_path / 'reel.mp4', 30, (1080, 1920)), now).warning == ''
+    assert engine.add(make_mp4(tmp_path / 'square.mp4', 30, (1080, 1080)), now).warning == ''
+    wide = engine.add(make_mp4(tmp_path / 'wide.mp4', 30, (1920, 1080)), now)
+    assert 'landscape (1920×1080)' in wide.warning and 'black bars' in wide.warning
+    assert 'very tall' in engine.add(make_mp4(tmp_path / 'tall.mp4', 30, (500, 2000)), now).warning
+    junk = tmp_path / 'junk.mp4'; junk.write_bytes(b'\0' * 100)
+    assert 'Could not read' in engine.add(junk, now).warning
+    assert Engine(engine.dir).get(wide.id).warning == wide.warning   # kept with the post
 
 
 # --- publishing --------------------------------------------------------------------------------------------------

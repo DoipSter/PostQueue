@@ -8,8 +8,8 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from PySide6.QtCore import QDate, QDateTime, QEvent, QPoint, QPointF, QSize, Qt, QThread, QTime, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPixmap, QTextCharFormat
+from PySide6.QtCore import QDate, QDateTime, QEvent, QPoint, QPointF, QRect, QSize, Qt, QThread, QTime, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QColor, QDesktopServices, QFont, QGuiApplication, QIcon, QImage, QKeySequence, QPainter, QPen, QPixmap, QRegion, QTextCharFormat
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCalendarWidget, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
                                QFileDialog, QFormLayout, QFrame, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMainWindow, QMenu,
                                QMessageBox, QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSizePolicy, QSpinBox, QSplitter, QStackedWidget,
@@ -27,7 +27,7 @@ FILE_FILTER = 'Photos and videos (*.jpg *.jpeg *.png *.webp *.bmp *.tif *.tiff *
 CHECK_SECONDS = 30
 STATUS_COLOR = {'queued': None, 'posting': '#8ec5ff', 'posted': '#7fe0a0', 'failed': '#ff8a7a', 'missed': '#ffcf6e'}
 TRAY_NAME = 'the menu bar' if cfg.MAC else 'the notification area'
-OK_STYLE, BAD_STYLE, MUTED_STYLE = 'color: #7fe0a0;', 'color: #ff8a7a;', 'color: rgba(255,255,255,0.62);'
+OK_STYLE, BAD_STYLE, MUTED_STYLE, WARN_STYLE = 'color: #7fe0a0;', 'color: #ff8a7a;', 'color: rgba(255,255,255,0.62);', 'color: #ffcf6e;'
 
 
 def resource(name):
@@ -68,17 +68,40 @@ def thumbnail(path, kind, size=72):
 
 
 class PreviewLabel(QLabel):
-    """Shows a pixmap scaled to whatever size the layout gives the label, without forcing a minimum size."""
+    """Shows a pixmap scaled to whatever size the layout gives the label, without forcing a minimum size. With a box
+    from engine.target_box it also shows what Instagram will get: the parts a crop removes are dimmed, and white
+    borders are drawn around the picture."""
     def __init__(self):
-        super().__init__(); self.source = None; self.setAlignment(Qt.AlignCenter)
+        super().__init__(); self.source = None; self.box = None; self.setAlignment(Qt.AlignCenter)
         self.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Ignored); self.setMinimumSize(240, 180)
 
-    def set_source(self, pixmap):
-        self.source = pixmap; self.rescale()
+    def set_source(self, pixmap, box=None):
+        self.source = pixmap; self.box = box; self.rescale()
+
+    def set_box(self, box):
+        self.box = box; self.rescale()
 
     def rescale(self):
         if self.source is None: self.clear(); return
-        self.setPixmap(self.source.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        self.setPixmap(self.render(self.size()))
+
+    def render(self, area):
+        """The picture as shown, fitted into `area`: dimmed outside a crop box, or on a white canvas for a padding box."""
+        src = self.source; box = self.box
+        if not box or box == (0, 0, src.width(), src.height()): return src.scaled(area, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        left, top, right, bottom = box
+        if left >= 0 and top >= 0:   # crop: dim what is cut off and outline what stays
+            shown = src.scaled(area, Qt.KeepAspectRatio, Qt.SmoothTransformation); scale = shown.width() / src.width()
+            keep = QRect(round(left * scale), round(top * scale), round((right - left) * scale), round((bottom - top) * scale))
+            painter = QPainter(shown); painter.setClipRegion(QRegion(shown.rect()).subtracted(QRegion(keep)))
+            painter.fillRect(shown.rect(), QColor(0, 0, 0, 150)); painter.setClipping(False)
+            painter.setPen(QPen(QColor(255, 255, 255, 220), 1)); painter.drawRect(keep.adjusted(0, 0, -1, -1)); painter.end()
+            return shown
+        cw, ch = right - left, bottom - top; scale = min(area.width() / cw, area.height() / ch)   # pad: the picture on its white canvas
+        canvas = QPixmap(max(1, round(cw * scale)), max(1, round(ch * scale))); canvas.fill(QColor('white'))
+        picture = src.scaled(max(1, round(src.width() * scale)), max(1, round(src.height() * scale)), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        painter = QPainter(canvas); painter.drawPixmap(round(-left * scale), round(-top * scale), picture); painter.end()
+        return canvas
 
     def resizeEvent(self, event):
         super().resizeEvent(event); self.rescale()
@@ -768,7 +791,7 @@ class MainWindow(QMainWindow):
     def __init__(self, engine, settings, lock=None):
         super().__init__()
         self.engine, self.settings, self.lock = engine, settings, lock
-        self.worker = None; self.current = None; self.dirty = False; self.thumbs = {}; self.quitting = False
+        self.worker = None; self.current = None; self.dirty = False; self.thumbs = {}; self.video_infos = {}; self.quitting = False
         self.setWindowTitle(TITLE); self.setObjectName('main'); self.resize(1180, 720); self.setAcceptDrops(True); self.setStyleSheet(APP_STYLE)
         self.build(); self.build_tray()
         self.refresh()
@@ -828,6 +851,7 @@ class MainWindow(QMainWindow):
         self.preview = PreviewLabel(); self.preview.setStyleSheet('background: #1f1f23; border-radius: 6px;')
         dl.addWidget(self.preview, 1)
         self.name_label = QLabel(''); self.name_label.setObjectName('name'); self.name_label.setWordWrap(True); dl.addWidget(self.name_label)
+        self.media_info = QLabel(''); self.media_info.setObjectName('media_info'); self.media_info.setWordWrap(True); self.media_info.setStyleSheet(MUTED_STYLE); dl.addWidget(self.media_info)
         form = QFormLayout(); form.setLabelAlignment(Qt.AlignRight); dl.addLayout(form)
         when_box = QVBoxLayout(); when_box.setSpacing(4)
         self.when_edit = DateTimePicker(); self.when_edit.setObjectName('when'); self.when_edit.setAccessibleName('Scheduled date and time')
@@ -841,7 +865,7 @@ class MainWindow(QMainWindow):
         form.addRow('Post on', when_box)
         self.fit_combo = QComboBox(); self.fit_combo.setObjectName('fit'); self.fit_combo.addItem('Crop to fit Instagram', 'crop'); self.fit_combo.addItem('Add white borders', 'pad')
         self.fit_combo.setToolTip('Instagram accepts photos between 4:5 (portrait) and 1.91:1 (landscape). Photos outside that range are cropped or padded.')
-        self.fit_combo.currentIndexChanged.connect(self.mark_dirty); form.addRow('If the shape is off', self.fit_combo)
+        self.fit_combo.currentIndexChanged.connect(self.fit_changed); form.addRow('If the shape is off', self.fit_combo); self.fit_label = form.labelForField(self.fit_combo)
         self.caption = QPlainTextEdit(); self.caption.setObjectName('caption'); self.caption.setAccessibleName('Caption'); self.caption.setPlaceholderText('Caption, #hashtags and @mentions')
         self.caption.setMaximumHeight(140); self.caption.textChanged.connect(self.caption_changed); form.addRow('Caption', self.caption)
         self.caption_info = QLabel(''); self.caption_info.setStyleSheet(MUTED_STYLE); form.addRow('', self.caption_info)
@@ -914,7 +938,7 @@ class MainWindow(QMainWindow):
         self.current = post; self.dirty = False
         self.detail.setEnabled(post is not None)
         if post is None:
-            self.preview.set_source(None); self.name_label.setText(''); self.status_label.setText('')
+            self.preview.set_source(None); self.name_label.setText(''); self.media_info.setText(''); self.status_label.setText('')
             self.caption.blockSignals(True); self.caption.clear(); self.caption.blockSignals(False); self.caption_info.setText('')
             for b in (self.save_button, self.post_now_button, self.open_button, self.remove_button): b.setVisible(False)
             return
@@ -924,7 +948,7 @@ class MainWindow(QMainWindow):
         self.when_edit.setDateTime(to_qdt(post.when_dt())); self.fit_combo.setCurrentIndex(max(0, self.fit_combo.findData(post.fit)))
         self.caption.setPlainText(post.caption)
         for w in (self.when_edit, self.fit_combo, self.caption): w.blockSignals(False)
-        self.fit_combo.setVisible(post.kind == 'image'); self.update_caption_info()
+        self.fit_combo.setVisible(post.kind == 'image'); self.fit_label.setVisible(post.kind == 'image'); self.update_caption_info(); self.update_preview()
         editable = post.status in ('queued', 'failed', 'missed')
         self.when_edit.setEnabled(editable); self.caption.setEnabled(editable); self.fit_combo.setEnabled(editable)
         text = post.status_text()
@@ -940,6 +964,24 @@ class MainWindow(QMainWindow):
         if self.current and self.detail.isEnabled(): self.dirty = True; self.save_button.setEnabled(True)
 
     def caption_changed(self): self.update_caption_info(); self.mark_dirty()
+    def fit_changed(self, *_): self.update_preview(); self.mark_dirty()
+
+    def update_preview(self):
+        """Draw on the preview what Instagram will get, and say so under it: for a photo, the crop or the white borders
+        the chosen fit gives; for a video, its length and size, or the warning from when it was added."""
+        post, pm = self.current, self.preview.source
+        if not post or pm is None: self.media_info.setText(''); return
+        if post.kind == 'video':
+            if post.id not in self.video_infos: self.video_infos[post.id] = eng.video_info(post.media)
+            summary = eng.video_summary(self.video_infos[post.id])
+            self.media_info.setText(post.warning or (f'Video · {summary} · posted as a Reel' if summary else 'Posted as a Reel'))
+            self.media_info.setStyleSheet(WARN_STYLE if post.warning else MUTED_STYLE); self.preview.set_box(None); return
+        fit = self.fit_combo.currentData() or 'crop'; box = eng.target_box(pm.width(), pm.height(), fit); self.preview.set_box(box)
+        whole = box == (0, 0, pm.width(), pm.height()); tall = pm.height() > pm.width()
+        if whole: text = 'Photo · within Instagram\'s shape range, posted whole'
+        elif fit == 'crop': text = f'Photo · the dimmed {"top and bottom" if tall else "sides"} will be cropped off'
+        else: text = f'Photo · white borders will be added {"at the sides" if tall else "above and below"}'
+        self.media_info.setText(text); self.media_info.setStyleSheet(MUTED_STYLE)
 
     def update_caption_info(self):
         text = self.caption.toPlainText(); warnings = eng.caption_warnings(text)
@@ -1018,6 +1060,7 @@ class MainWindow(QMainWindow):
 
     def post_now(self):
         if not self.current or self.worker is not None: return
+        if QMessageBox.question(self, PRODUCT, f'Post {self.current.name()} to Instagram now?', QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes: return
         if self.dirty: self.engine.update(self.current, caption=self.caption.toPlainText(), fit=self.fit_combo.currentData() or 'crop'); self.dirty = False
         self.engine.reschedule(self.current, eng.now_local()); self.start_publish(self.current)
 
