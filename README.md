@@ -4,6 +4,8 @@ A Windows and Mac app that posts photos and videos to Instagram on a schedule. D
 
 - **Picture by picture:** [docs/walkthrough](docs/walkthrough/README.md) (every screen from first launch to a posted photo and its confirmation)
 - **Users:** [docs/USER_GUIDE.md](docs/USER_GUIDE.md) (install, one-time setup, daily use)
+- **Privacy and data deletion:** [docs/privacy.md](docs/privacy.md) and [docs/data-deletion.md](docs/data-deletion.md), published at <https://doipster.github.io/PostQueue/privacy/> and <https://doipster.github.io/PostQueue/data-deletion/> (GitHub Pages from `docs\`; these are the addresses Meta's App Review asks for)
+- **Meta App Review:** [docs/app-review.md](docs/app-review.md) (permissions, screen-recording script, business verification)
 - **Build and release testing:** [BUILD_AND_TEST_GUIDE.md](BUILD_AND_TEST_GUIDE.md)
 - **What changed:** [CHANGELOG.md](CHANGELOG.md)
 
@@ -31,7 +33,8 @@ One-time setup, once `branding.py` names your Meta app and the deployed PostQueu
 | `tests\` | Engine and interface tests (pytest, no network), `release\Test-Release.ps1` and `release\test-release-macos.sh` for release builds |
 | `installer\`, `assets\` | Package definition (PyInstaller spec for both platforms), MSI definition (WiX v5) and its Install screen text, icons (`make_assets.py` regenerates them, including the `.icns`) |
 | `Build_Windows_EXE.cmd`, `build_macos.sh` | The two build scripts |
-| `THIRD_PARTY_NOTICES.txt`, `licenses\` | Third-party notices and licence texts, shipped with the program |
+| `LICENSE`, `THIRD_PARTY_NOTICES.txt`, `licenses\` | PostQueue's MIT licence; third-party notices and licence texts, shipped with the program |
+| `docs\` | User guide, walkthrough, privacy policy, data deletion page and App Review notes; `_config.yml` and `index.md` make it a GitHub Pages site |
 | `.github\workflows\build.yml` | CI: Windows x64 and ARM64 (MSIs) and macOS arm64 and x86_64 (DMGs), tests and release tests |
 
 ## Build
@@ -57,3 +60,7 @@ See the build guide for x64 builds on ARM PCs, the MSI and DMG, and signing.
 Everything the app keeps is in `%LOCALAPPDATA%\PostQueue`: `posts.json` (the queue), `media\` (copies of the files, so the originals can be moved), `settings.json` (tokens and secrets protected with Windows DPAPI for the signed-in user), and `postqueue.log`. The `POSTQUEUE_DATA` environment variable points the app elsewhere.
 
 Silent install: `msiexec /i PostQueue-1.0.0-x64.msi /qn` installs per user. Add `ALLUSERS=1` to install per machine.
+
+## Licence
+
+PostQueue is released under the MIT licence; see [LICENSE](LICENSE). The bundled components (Python, Qt, Pillow and the rest) keep their own licences, listed in `THIRD_PARTY_NOTICES.txt` and `licenses\`.
