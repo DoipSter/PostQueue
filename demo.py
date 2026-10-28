@@ -44,7 +44,13 @@ def phone(header, rows, back=True, note=''):
 
 META_URL, APPS_URL, DASH_URL = 'developers.facebook.com', 'developers.facebook.com/apps', 'developers.facebook.com/apps/1234567890'
 NAV_OUT = [('login', 'Login', 'plain'), ('search', '', 'search')]
+NAV_NEW = [('getstarted', 'Get Started', 'plain'), ('search', '', 'search')]
 NAV_IN = [('myapps', 'My Apps', 'button'), ('avatar', '', 'avatar')]
+REGISTER = [el('dialog', rect=(120, 50, 240, 200), text='Register as a Meta developer', items=[
+    el('option', 'verify', rect=(136, 82, 208, 24), text='Verify your account (phone or email)', on=True),
+    el('option', 'terms', rect=(136, 110, 208, 24), text='Accept the developer terms', on=False),
+    el('option', 'about', rect=(136, 138, 208, 24), text='What best describes you? Developer', on=False),
+    el('lines', rect=(136, 172, 208, 24), n=2), el('button', 'continue', rect=(286, 216, 58, 20), text='Continue', style='blue')])]
 FRONT = [el('heading', rect=(0, 76, W, 30), text='Social technologies', size=22, center=True),
          el('text', rect=(0, 112, W, 14), text='Build technologies that help people connect, find communities and grow businesses.', center=True),
          el('heading', rect=(0, 150, W, 20), text='Get started', size=13, center=True),
@@ -82,7 +88,9 @@ def cloudinary(target_rows=True):
 def scenes():
     create_app = [
         ('Login, at the top right (next to the search icon)', web(META_URL, FRONT, nav=NAV_OUT, white=True), 'login'),
-        ('My Apps', web(META_URL, FRONT, nav=NAV_IN, white=True), 'myapps'),
+        ('Signed in but it says Get Started? Press it: that registers you as a developer', web(META_URL, FRONT, nav=NAV_NEW, white=True), 'getstarted'),
+        ('Verify your account, accept the terms, say what describes you, Continue', web(META_URL + '/async/registration', FRONT + REGISTER, nav=NAV_NEW, white=True), 'continue'),
+        ('My Apps (it replaces Get Started once you are registered)', web(META_URL, FRONT, nav=NAV_IN, white=True), 'myapps'),
         ('Create app', web(APPS_URL, [el('heading', rect=(30, 60, 200, 20), text='Apps'), el('lines', rect=(30, 96, 420, 60), n=3),
                                       el('button', 'create', rect=(370, 58, 80, 22), text='Create app', style='green')], nav=NAV_IN), 'create'),
         ('Choose Business (or the Instagram use case), then Create app',

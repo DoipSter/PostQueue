@@ -458,9 +458,9 @@ def test_setup_demos_replay_and_point_at_real_targets(window, qapp):
     with_demo = {st.key for st in flow.steps if st.demo}
     assert with_demo == {'professional', 'create_app', 'app_id', 'app_secret', 'redirect', 'roles', 'cloud_name', 'api_key', 'api_secret'}
     flow.goto('create_app'); qapp.processEvents()
-    panel = flow.step().page.findChild(demo.DemoPanel); assert panel.isVisible() and panel.timer.isActive() and len(panel.frames) == 5
+    panel = flow.step().page.findChild(demo.DemoPanel); assert panel.isVisible() and panel.timer.isActive() and len(panel.frames) == 7
     panel.tick(demo.FRAME_MS); assert panel.index == 1                       # the next frame after one frame's time
-    for _ in range(4): panel.tick(demo.FRAME_MS + demo.LAST_EXTRA_MS)
+    for _ in range(6): panel.tick(demo.FRAME_MS + demo.LAST_EXTRA_MS)
     assert panel.index == 0                                                   # and round again
     for i in range(len(panel.frames)):
         panel.show_frame(i); panel.elapsed = int(demo.FRAME_MS * 0.5); assert not panel.grab().isNull()   # every frame paints, mid-click
