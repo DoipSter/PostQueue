@@ -12,7 +12,7 @@ Closing the window keeps PostQueue running in the notification area on Windows (
 
 ## 2. One-time setup
 
-The first time PostQueue opens, it walks you through setup **one screen at a time**: three short screens, each with one thing to do and one button. Everything can be changed later in **Settings** (the gear in the toolbar).
+The first time PostQueue opens, it walks you through setup **one screen at a time**: three short screens, each with one thing to do and one button. The window itself appears only once they are finished; closing the setup early quits PostQueue, and the next start begins with it again. Everything can be changed later in **Settings** (the gear in the toolbar).
 
 ![Welcome](screenshots/guide-simple-welcome.png)
 

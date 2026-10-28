@@ -6,7 +6,7 @@ Every screen the user sees, in order, with what to do on each. The pictures are 
 
 ![First launch](01-first-launch.png)
 
-**1** The window opens with a yellow bar: nothing can post until setup is done. Press **Finish setup** (or wait: the setup screens open by themselves on the first run).
+On the first run the setup screens come first and the window itself appears only once they are finished, so there is nothing to click by mistake before then. Closing the setup early quits PostQueue; the next start begins with the setup again. The picture above shows the one case where the window appears with setup incomplete: if it ever becomes incomplete later (after signing out, say), a yellow bar says what is missing and **Finish setup** (1) reopens the screens.
 
 ## Setup: three screens
 

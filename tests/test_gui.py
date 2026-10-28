@@ -472,3 +472,28 @@ def test_setup_demos_replay_and_point_at_real_targets(window, qapp):
     assert not flow.step().page.findChild(ui.QLabel, 'hint').isVisible()      # short window: the demo wins over the hint
     flow.resize(940, 720); qapp.processEvents(); assert flow.step().page.findChild(ui.QLabel, 'hint').isVisible()
     flow.reject()
+
+
+def test_first_run_shows_only_the_setup_and_quits_if_it_is_closed(window, qapp, monkeypatch, tmp_path):
+    s = fresh_settings(window); assert window.needs_setup()
+    monkeypatch.setattr(ui.SetupFlow, 'exec', lambda self: ui.QDialog.Rejected)
+    assert window.first_run() is False                                       # closed early: the window never comes
+    def finish(self): self.accept(); return ui.QDialog.Accepted
+    monkeypatch.setattr(ui.SetupFlow, 'exec', finish)
+    assert window.first_run() is True and s['setup_done'] and not window.needs_setup()
+    assert window.first_run() is True                                        # set up already: nothing to show
+    # main() ends with 0, without the window or the event loop, when the first setup is closed
+    monkeypatch.setenv('POSTQUEUE_DATA', str(tmp_path / 'fresh')); monkeypatch.setattr(ui, 'make_app', lambda: QApplication.instance())
+    monkeypatch.setattr(ui.SetupFlow, 'exec', lambda self: ui.QDialog.Rejected)
+    shown = []; monkeypatch.setattr(ui.MainWindow, 'show', lambda self: shown.append(True))
+    assert ui.main([]) == 0 and not shown and not (tmp_path / 'fresh' / 'postqueue.lock').exists()
+
+
+def test_setup_window_fits_the_screen(window, qapp):
+    flow = ui.SetupFlow(fresh_settings(window), window); avail = flow.avail
+    assert flow.width() <= avail.width() - 40 and flow.height() <= avail.height() - 70 and flow.height() <= 720
+    assert flow.minimumHeight() <= flow.height() and flow.minimumWidth() <= flow.width()
+    flow.show(); qapp.processEvents(); flow.move(avail.right() + 300, avail.top() - 400); flow.keep_on_screen(); qapp.processEvents()
+    frame = flow.frameGeometry(); assert avail.contains(frame.topLeft()) and avail.contains(frame.bottomRight())   # title bar and edges reachable
+    assert flow.windowFlags() & ui.Qt.WindowCloseButtonHint
+    flow.reject()

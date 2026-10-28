@@ -499,7 +499,7 @@ class SetupFlow(QDialog):
     cannot apply are skipped; the sign-in and the hosting test move on by themselves when they succeed."""
     def __init__(self, settings, parent=None):
         super().__init__(parent); self.settings = settings; self.setObjectName('setup'); self.setWindowTitle(f'Set up {PRODUCT}')
-        self.resize(940, 720); self.setMinimumSize(760, 600); self.setStyleSheet(SETUP_STYLE)
+        self.fit_to_screen(); self.setStyleSheet(SETUP_STYLE)
         self.task = None; self.cancelled = False; self.use_token = False; self.found_accounts = []; self.history = []
         # Simple path: the built-in Meta app and hosting service, so the user only signs in. Advanced path: their own
         # Meta app and Cloudinary account (the only path while branding.py is not filled in).
@@ -519,6 +519,23 @@ class SetupFlow(QDialog):
         nav.addWidget(self.back_button); nav.addStretch(1); nav.addWidget(self.skip_button); nav.addWidget(self.primary); outer.addLayout(nav)
         for step in self.steps: self.stack.addWidget(self.page_for(step))
         self.show_step(0)
+
+    def fit_to_screen(self):
+        """Size the window to the screen it opens on. 940x720 at most, but never taller than the screen minus room for the
+        title bar and taskbar: on a 200 % display the full size put the title bar off the top, so it could not be moved or closed."""
+        screen = (self.parent().screen() if self.parent() else None) or QGuiApplication.primaryScreen()
+        self.avail = screen.availableGeometry() if screen else QRect(0, 0, 1280, 800)
+        w, h = min(940, self.avail.width() - 40), min(720, self.avail.height() - 70)
+        self.setMinimumSize(min(760, w), min(600, h)); self.resize(w, h)
+
+    def showEvent(self, event):
+        super().showEvent(event); QTimer.singleShot(0, self.keep_on_screen)
+
+    def keep_on_screen(self):
+        """Once the frame is known, slide the window so its title bar and edges are inside the available screen."""
+        frame = self.frameGeometry(); x, y = frame.x(), frame.y()
+        x = max(self.avail.left(), min(x, self.avail.right() - frame.width() + 1)); y = max(self.avail.top(), min(y, self.avail.bottom() - frame.height() + 1))
+        if (x, y) != (frame.x(), frame.y()): self.move(self.pos() + QPoint(x - frame.x(), y - frame.y()))
 
     # --- screens --------------------------------------------------------------------------------------------------
     def page_for(self, step):
@@ -1323,8 +1340,16 @@ class MainWindow(QMainWindow):
     def open_setup(self):
         """The first-run flow (one thing per screen); the settings dialog once set-up is complete."""
         if self.settings.ready(branding.SERVICE_URL): return self.open_settings()
-        flow = SetupFlow(self.settings, self); flow.exec()
-        self.settings.save(); self.refresh(); self.apply_startup_setting()
+        self.run_setup()
+
+    def run_setup(self):
+        """Show the setup flow and say whether it was finished (closing it early is not finishing)."""
+        flow = SetupFlow(self.settings, self); done = flow.exec() == QDialog.Accepted
+        self.settings.save(); self.refresh(); self.apply_startup_setting(); return done
+
+    def first_run(self):
+        """Before setup is done there is nothing the window could do, so only the setup is shown. Closing it quits."""
+        return not self.needs_setup() or self.run_setup()
 
     def open_settings(self):
         dialog = SettingsDialog(self.settings, self)
@@ -1385,10 +1410,9 @@ def main(argv=None):
         if not cfg.WINDOWS:   # a termination signal (log-out, `kill`) ends the app the clean way, so the lock is released
             def terminate(*_): window.quitting = True; window.close()
             with contextlib.suppress(Exception): signal.signal(signal.SIGTERM, terminate)
+        if not window.first_run(): return 0   # setup closed before it was finished: nothing to run yet
         if minimized and window.tray: window.hide()
-        else:
-            window.show()
-            if window.needs_setup(): QTimer.singleShot(300, window.open_setup)
+        else: window.show()
         return app.exec()
     finally:
         lock.release()
