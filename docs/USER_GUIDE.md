@@ -87,7 +87,7 @@ A Meta app is a free registration that lets PostQueue post as you. The screens t
 
 ![Create a Meta app](screenshots/guide-setup-create-app.png)
 
-Press **Open developers.facebook.com** (1). Use **Log In** at the top right with your Facebook account (the page says "not found" if you go straight to the apps list while logged out), then open **My Apps**, click **Create app**, choose the **Business** type (or the "Instagram" use case when offered) and add the **Instagram** product, exactly as the demo on the screen shows, frame by frame. Keep the app in development mode. Then press **I created it, next** (2).
+Press **Open developers.facebook.com** (1). Use **Login** at the top right (next to the search icon) with your Facebook account (the page says "not found" if you go straight to the apps list while logged out), then open **My Apps**, click **Create app**, choose the **Business** type (or the "Instagram" use case when offered) and add the **Instagram** product, exactly as the demo on the screen shows, frame by frame. Keep the app in development mode. Then press **I created it, next** (2).
 
 ![Paste the App ID](screenshots/guide-setup-app-id.png)
 

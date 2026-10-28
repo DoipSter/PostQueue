@@ -624,7 +624,7 @@ class SetupFlow(QDialog):
                  primary='Done, next', demo='professional'),
             Step('login_kind', 'How will you sign in?', 'Both work. Facebook Login needs the account linked to a Facebook Page '
                  '(Instagram › Settings › Business tools › Connect a Facebook Page).', build=login_kind_control, primary=None, skip_if=lambda: not self.advanced),
-            Step('create_app', 'Create a Meta app', 'Log in on the developer site with your Facebook account, create an app of the Business type '
+            Step('create_app', 'Create a Meta app', 'On the developer site press Login (top right) and sign in with your Facebook account, then create an app of the Business type '
                  '(or the Instagram use case) and add the Instagram product, as the demo shows. Keep the app in development mode.',
                  build=open_meta_control, primary='I created it, next', skip_if=token_path, demo='create_app'),
             Step('app_id', 'Paste the App ID', 'In the app dashboard: App settings › Basic › App ID. PostQueue checks it with Meta when you press Next.',

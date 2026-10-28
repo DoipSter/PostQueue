@@ -28,10 +28,13 @@ def el(kind, id=None, rect=None, **kw):
     d = dict(kind=kind, id=id, rect=rect); d.update(kw); return d
 
 
-def web(url, body, nav=(), side=(), title='Meta for Developers', dark_side=False):
-    """A browser window: `nav` is a list of (id, text, style) on the right of the site's top bar, `side` a list of
-    (id, text, indent, active) rows in a left sidebar, `body` the elements on the page."""
-    return dict(kind='web', url=url, nav=list(nav), side=list(side), body=list(body), title=title, dark_side=dark_side)
+META_MENU = ('Build with us ⌄', 'Docs', 'Blog', 'Resources ⌄', 'Developer centers ⌄')
+
+
+def web(url, body, nav=(), side=(), title='Meta', menu=META_MENU, dark_side=False, white=False):
+    """A browser window: `menu` is the site's own menu after its name, `nav` a list of (id, text, style) on the right of
+    the top bar, `side` a list of (id, text, indent, active) rows in a left sidebar, `body` the elements on the page."""
+    return dict(kind='web', url=url, nav=list(nav), side=list(side), body=list(body), title=title, menu=list(menu), dark_side=dark_side, white=white)
 
 
 def phone(header, rows, back=True, note=''):
@@ -40,8 +43,12 @@ def phone(header, rows, back=True, note=''):
 
 
 META_URL, APPS_URL, DASH_URL = 'developers.facebook.com', 'developers.facebook.com/apps', 'developers.facebook.com/apps/1234567890'
-NAV_OUT = [('docs', 'Docs', 'plain'), ('tools', 'Tools', 'plain'), ('support', 'Support', 'plain'), ('login', 'Log In', 'button')]
-NAV_IN = [('docs', 'Docs', 'plain'), ('tools', 'Tools', 'plain'), ('support', 'Support', 'plain'), ('myapps', 'My Apps', 'button'), ('avatar', '', 'avatar')]
+NAV_OUT = [('login', 'Login', 'plain'), ('search', '', 'search')]
+NAV_IN = [('myapps', 'My Apps', 'button'), ('avatar', '', 'avatar')]
+FRONT = [el('heading', rect=(0, 76, W, 30), text='Social technologies', size=22, center=True),
+         el('text', rect=(0, 112, W, 14), text='Build technologies that help people connect, find communities and grow businesses.', center=True),
+         el('heading', rect=(0, 150, W, 20), text='Get started', size=13, center=True),
+         el('lines', rect=(40, 184, 400, 30), n=1)]
 
 
 def dashboard(active, extra_side=()):
@@ -69,15 +76,13 @@ def cloudinary(target_rows=True):
             el('field', 'cloud', rect=(140, 84, 150, 36), label='Cloud name', value='my-cloud', copy=True),
             el('field', 'key', rect=(140, 132, 200, 36), label='API key', value='123456789012345', copy=True),
             el('field', 'secret', rect=(140, 180, 240, 36), label='API secret', value='••••••••••••••••••', button=('reveal', 'Reveal'), copy=True)]
-    return web('console.cloudinary.com/settings/api-keys', body, side=side, title='Cloudinary', dark_side=True)
+    return web('console.cloudinary.com/settings/api-keys', body, side=side, title='Cloudinary', menu=(), dark_side=True)
 
 
 def scenes():
     create_app = [
-        ('Log In, at the top right',
-         web(META_URL, [el('heading', rect=(30, 70, 300, 24), text='Build on Meta', size=18), el('lines', rect=(30, 104, 240, 40), n=3),
-                        el('button', None, rect=(30, 156, 80, 22), text='Get started', style='blue')], nav=NAV_OUT), 'login'),
-        ('My Apps', web(META_URL, [el('heading', rect=(30, 70, 300, 24), text='Build on Meta', size=18), el('lines', rect=(30, 104, 240, 40), n=3)], nav=NAV_IN), 'myapps'),
+        ('Login, at the top right (next to the search icon)', web(META_URL, FRONT, nav=NAV_OUT, white=True), 'login'),
+        ('My Apps', web(META_URL, FRONT, nav=NAV_IN, white=True), 'myapps'),
         ('Create app', web(APPS_URL, [el('heading', rect=(30, 60, 200, 20), text='Apps'), el('lines', rect=(30, 96, 420, 60), n=3),
                                       el('button', 'create', rect=(370, 58, 80, 22), text='Create app', style='green')], nav=NAV_IN), 'create'),
         ('Choose Business (or the Instagram use case), then Create app',
@@ -176,13 +181,17 @@ class Page:
         self.rounded((0, 0, W, H), CHROME, radius=0)
         for i, c in enumerate(('#ff5f57', '#febc2e', '#28c840')): self.rounded((8 + i * 11, 6, 7, 7), QColor(c), radius=3.5)
         self.rounded((46, 4, W - 60, 12), QColor('#44444f'), radius=6); self.text((54, 4, W - 76, 12), page['url'], 7, QColor('#d0d0d8'))
-        p.fillRect(QRectF(0, 20, W, H - 20), PAGE)
+        p.fillRect(QRectF(0, 20, W, H - 20), WHITE if page['white'] else PAGE)
         p.fillRect(QRectF(0, 20, W, 24), WHITE); p.setPen(LINE); p.drawLine(QPointF(0, 44), QPointF(W, 44))
-        self.text((10, 20, 200, 24), page['title'], 9, INK, bold=True)
+        self.text((10, 20, 200, 24), page['title'], 9, INK, bold=True); mx = 14 + self.width(page['title'], 9, True)
+        for item in page['menu']:
+            self.text((mx, 20, 200, 24), item, 7, INK); mx += self.width(item, 7) + 10
         x = W - 10
         for id, label, style in reversed(page['nav']):
             if style == 'avatar':
                 x -= 16; self.rounded((x, 24, 16, 16), QColor('#c4c7cc'), radius=8); self.rects[id] = (x, 24, 16, 16); x -= 10; continue
+            if style == 'search':
+                x -= 12; self.rounded((x, 26, 9, 9), WHITE, BLUE, radius=4.5, width=1.5); p.drawLine(QPointF(x + 8, y0 := 34), QPointF(x + 11, y0 + 3)); self.rects[id] = (x, 24, 12, 14); x -= 10; continue
             w = self.width(label, 8, bold=(style == 'button')) + (16 if style == 'button' else 4); x -= w
             if style == 'button': self.rounded((x, 24, w, 16), BLUE if label == 'Log In' else QColor('#e4e6eb'), radius=5)
             self.text((x, 24, w, 16), label, 8, WHITE if label == 'Log In' else INK, bold=(style == 'button'), align=Qt.AlignCenter)
@@ -201,8 +210,9 @@ class Page:
 
     def draw_el(self, e):
         kind, r = e['kind'], e['rect']
-        if kind == 'heading': self.text(r, e['text'], e.get('size', 12), INK, bold=True)
-        elif kind == 'text': self.text(r, e['text'], 9, e.get('color', INK), bold=e.get('bold', False))
+        centre = Qt.AlignCenter if e.get('center') else Qt.AlignLeft | Qt.AlignVCenter
+        if kind == 'heading': self.text(r, e['text'], e.get('size', 12), INK, bold=True, align=centre)
+        elif kind == 'text': self.text(r, e['text'], e.get('size', 9), e.get('color', INK), bold=e.get('bold', False), align=centre)
         elif kind == 'lines':
             x, y, w, h = r; n = e.get('n', 3); step = h / n
             for i in range(n): self.rounded((x, y + i * step + 2, w * (0.9 if i % 2 else 1.0), max(2, step - 6)), QColor('#dde0e5'), radius=2)
