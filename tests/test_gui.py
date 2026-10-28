@@ -497,3 +497,11 @@ def test_setup_window_fits_the_screen(window, qapp):
     frame = flow.frameGeometry(); assert avail.contains(frame.topLeft()) and avail.contains(frame.bottomRight())   # title bar and edges reachable
     assert flow.windowFlags() & ui.Qt.WindowCloseButtonHint
     flow.reject()
+
+
+def test_quit_releases_the_lock_before_the_event_loop_ends(window, qapp, tmp_path):
+    lock = cfg.InstanceLock(tmp_path / 'postqueue.lock'); lock.acquire(); window.lock = lock
+    window.settings['close_to_tray'] = False
+    window.close(); qapp.processEvents()   # no event loop is running, so the quit() this triggers does nothing here
+    assert not (tmp_path / 'postqueue.lock').exists()   # gone the moment the quit began
+    window.lock = None

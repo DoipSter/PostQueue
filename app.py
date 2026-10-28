@@ -3,6 +3,9 @@ timer that publishes posts when they are due, a first-run wizard that asks one t
 dialog. Network work runs in threads so the window stays responsive. Runs on Windows and macOS."""
 import contextlib
 import datetime as dt
+import faulthandler
+import logging
+import os
 import signal
 import sys
 import webbrowser
@@ -1376,7 +1379,9 @@ class MainWindow(QMainWindow):
                 self.tray.showMessage(PRODUCT, f'PostQueue keeps running in {TRAY_NAME} and posts on schedule. Use its menu to quit.', QSystemTrayIcon.Information, 8000)
                 self.settings['tray_hint_shown'] = True
             self.settings.save(); return
-        self.settings.save(); event.accept(); QApplication.instance().quit()
+        self.settings.save(); event.accept()
+        if self.lock: self.lock.release()   # now, not at the end of main(): a crash in Qt's teardown must not leave a stale lock
+        QApplication.instance().quit()
 
     def quit(self):
         if self.worker is not None and QMessageBox.question(self, PRODUCT, 'A post is being published right now. Quit anyway?', QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes: return
@@ -1396,6 +1401,7 @@ def focus_running_instance(lock):
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     minimized = '--minimized' in argv
+    with contextlib.suppress(Exception): faulthandler.enable()   # a crash prints the Python stack to stderr instead of vanishing
     app = make_app()
     data = cfg.data_dir(); data.mkdir(parents=True, exist_ok=True)
     settings = cfg.Settings(data / 'settings.json')
@@ -1413,6 +1419,11 @@ def main(argv=None):
         if not window.first_run(): return 0   # setup closed before it was finished: nothing to run yet
         if minimized and window.tray: window.hide()
         else: window.show()
-        return app.exec()
+        code = app.exec()
     finally:
         lock.release()
+    if cfg.MAC:
+        # PySide's interpreter teardown can crash on macOS after the event loop has ended (the tests use the same
+        # way out). Everything is saved and the lock is gone, so end the process here instead of unwinding.
+        logging.shutdown(); os._exit(code)
+    return code
