@@ -3,7 +3,8 @@
 # Usage: tests/release/test-release-macos.sh dist [results folder]
 # The app is pointed at a data folder under the results folder (POSTQUEUE_DATA), so the tester's own queue is untouched.
 DIST="${1:?dist folder}"; OUT="${2:-release-results}"
-mkdir -p "$OUT/data"; echo '{"close_to_tray": false, "start_with_windows": false}' > "$OUT/data/settings.json"
+# setup_done keeps the first-run setup (a modal dialog, shown before the window) from opening; these tests exercise the window.
+mkdir -p "$OUT/data"; echo '{"close_to_tray": false, "start_with_windows": false, "setup_done": true}' > "$OUT/data/settings.json"
 export POSTQUEUE_DATA="$OUT/data"; LOCK="$OUT/data/postqueue.lock"
 APP="$DIST/PostQueue.app"; BIN="$APP/Contents/MacOS/PostQueue"
 pass=0; fail=0; results="$OUT/results.md"; echo "# Release test results (macOS $(sw_vers -productVersion), $(uname -m), $(date '+%Y-%m-%d %H:%M'))" > "$results"; echo >> "$results"; echo "| Test | Result | Detail |" >> "$results"; echo "|---|---|---|" >> "$results"

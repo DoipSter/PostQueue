@@ -1408,7 +1408,7 @@ def main(argv=None):
         window = MainWindow(engine, settings, lock)
         window.apply_startup_setting()
         if not cfg.WINDOWS:   # a termination signal (log-out, `kill`) ends the app the clean way, so the lock is released
-            def terminate(*_): window.quitting = True; window.close()
+            def terminate(*_): window.quitting = True; window.close(); app.quit()   # quit() also ends a setup still being shown
             with contextlib.suppress(Exception): signal.signal(signal.SIGTERM, terminate)
         if not window.first_run(): return 0   # setup closed before it was finished: nothing to run yet
         if minimized and window.tray: window.hide()
