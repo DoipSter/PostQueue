@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCalendarWidget,
 
 import branding
 import engine as eng
+from demo import DemoPanel
 import hosting
 import instagram as ig
 import settings as cfg
@@ -486,9 +487,10 @@ SETUP_STYLE = f'''
 
 class Step:
     """One screen of the setup flow: a title, one instruction, optionally one control, and what Next does."""
-    def __init__(self, key, title, lead, hint='', primary='Next', build=None, ready=None, on_next=None, skip_if=None, enter=None, skippable=False):
+    def __init__(self, key, title, lead, hint='', primary='Next', build=None, ready=None, on_next=None, skip_if=None, enter=None, skippable=False, demo=None):
         self.key, self.title, self.lead, self.hint, self.primary = key, title, lead, hint, primary
         self.build, self.ready, self.on_next, self.skip_if, self.enter, self.skippable = build, ready, on_next, skip_if, enter, skippable
+        self.demo = demo   # key of a replaying demo (demo.py) showing where to click on the other site
         self.page = None
 
 
@@ -497,7 +499,7 @@ class SetupFlow(QDialog):
     cannot apply are skipped; the sign-in and the hosting test move on by themselves when they succeed."""
     def __init__(self, settings, parent=None):
         super().__init__(parent); self.settings = settings; self.setObjectName('setup'); self.setWindowTitle(f'Set up {PRODUCT}')
-        self.resize(900, 640); self.setMinimumSize(760, 560); self.setStyleSheet(SETUP_STYLE)
+        self.resize(940, 720); self.setMinimumSize(760, 600); self.setStyleSheet(SETUP_STYLE)
         self.task = None; self.cancelled = False; self.use_token = False; self.found_accounts = []; self.history = []
         # Simple path: the built-in Meta app and hosting service, so the user only signs in. Advanced path: their own
         # Meta app and Cloudinary account (the only path while branding.py is not filled in).
@@ -505,7 +507,7 @@ class SetupFlow(QDialog):
         settings['hosting'] = 'cloudinary' if self.advanced else 'service'
         if not self.advanced: settings['login_kind'] = branding.DEFAULT_LOGIN_KIND
         self.steps = self.make_steps(); self.index = 0
-        outer = QVBoxLayout(self); outer.setContentsMargins(56, 28, 56, 28); outer.setSpacing(12)
+        outer = QVBoxLayout(self); outer.setContentsMargins(56, 20, 56, 20); outer.setSpacing(12)
         self.progress = QLabel(''); self.progress.setObjectName('progress'); outer.addWidget(self.progress, 0, Qt.AlignHCenter)
         outer.addStretch(1)
         self.stack = QStackedWidget(); self.stack.setMaximumWidth(760); outer.addWidget(self.stack, 0, Qt.AlignHCenter)
@@ -520,13 +522,15 @@ class SetupFlow(QDialog):
 
     # --- screens --------------------------------------------------------------------------------------------------
     def page_for(self, step):
-        page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(18); page.setMinimumWidth(640)
+        page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(14); page.setMinimumWidth(640)
         title = QLabel(step.title); title.setObjectName('title'); title.setWordWrap(True); title.setAlignment(Qt.AlignHCenter); layout.addWidget(title)
         lead = QLabel(step.lead); lead.setObjectName('lead'); lead.setWordWrap(True); lead.setAlignment(Qt.AlignHCenter); lead.setOpenExternalLinks(True); layout.addWidget(lead)
+        if step.demo: layout.addWidget(DemoPanel(step.demo), 0, Qt.AlignHCenter)   # replays where to click until the screen changes
         if step.build:
             control = step.build(); layout.addWidget(control, 0, Qt.AlignHCenter if control.maximumWidth() < 2000 else Qt.Alignment())
         if step.hint:
             hint = QLabel(step.hint); hint.setObjectName('hint'); hint.setWordWrap(True); hint.setAlignment(Qt.AlignHCenter); hint.setOpenExternalLinks(True); layout.addWidget(hint)
+            hint.setProperty('with_demo', bool(step.demo))   # on a short screen the demo wins over the hint
         layout.addStretch(1)   # keep the title, instruction and control together at the top of the page
         step.page = page; return page
 
@@ -617,26 +621,25 @@ class SetupFlow(QDialog):
             Step('professional', 'Use a professional Instagram account',
                  'In the Instagram app: Settings › Account type and tools › Switch to professional account. Business or Creator, both are free.',
                  hint='Already professional? Just carry on. For Facebook Login, the account also needs a linked Facebook Page: Instagram › Settings › Business tools › Connect a Facebook Page.',
-                 primary='Done, next'),
+                 primary='Done, next', demo='professional'),
             Step('login_kind', 'How will you sign in?', 'Both work. Facebook Login needs the account linked to a Facebook Page '
                  '(Instagram › Settings › Business tools › Connect a Facebook Page).', build=login_kind_control, primary=None, skip_if=lambda: not self.advanced),
-            Step('create_app', 'Create a Meta app', 'On the developer site, use Log In (top right) with your Facebook account, open My Apps, click Create app, '
-                 'choose the Business type (or the Instagram use case), and add the Instagram product. Keep the app in development mode.',
-                 hint='Going straight to the apps list while logged out shows "page not found"; log in first.',
-                 build=open_meta_control, primary='I created it, next', skip_if=token_path),
+            Step('create_app', 'Create a Meta app', 'Log in on the developer site with your Facebook account, create an app of the Business type '
+                 '(or the Instagram use case) and add the Instagram product, as the demo shows. Keep the app in development mode.',
+                 build=open_meta_control, primary='I created it, next', skip_if=token_path, demo='create_app'),
             Step('app_id', 'Paste the App ID', 'In the app dashboard: App settings › Basic › App ID. PostQueue checks it with Meta when you press Next.',
                  build=lambda: self.checked_field('app_id_edit', 'App ID', 'app_id_status', text=s.get('app_id', '')), ready=lambda: bool(self.app_id_edit.text().strip()),
-                 on_next=self.check_app_id, skip_if=token_path, enter=lambda: self.app_id_status.setText('')),
+                 on_next=self.check_app_id, skip_if=token_path, enter=lambda: self.app_id_status.setText(''), demo='app_id'),
             Step('app_secret', 'Paste the App secret', 'App settings › Basic › App secret (click Show). PostQueue proves the ID and secret match before moving on.',
                  hint='With the secret, the sign-in lasts 60 days. Instagram Login always needs it; a Facebook sign-in without it lasts about two hours.',
                  build=lambda: self.checked_field('app_secret_edit', 'App secret', 'secret_status', password=True, text=s.get('app_secret', '')),
                  ready=lambda: bool(self.app_secret_edit.text().strip()) or s.get('login_kind') == 'facebook', on_next=self.check_secret,
-                 skip_if=token_path, skippable=True, enter=lambda: self.secret_status.setText('')),
+                 skip_if=token_path, skippable=True, enter=lambda: self.secret_status.setText(''), demo='app_secret'),
             Step('redirect', 'Let the sign-in come back to PostQueue', 'In the app dashboard, open Facebook Login › Settings (or Instagram › Business login settings) '
-                 'and add this address to Valid OAuth Redirect URIs:', build=redirect_control, primary='Added, next', skip_if=token_path),
+                 'and add this address to Valid OAuth Redirect URIs:', build=redirect_control, primary='Added, next', skip_if=token_path, demo='redirect'),
             Step('roles', 'Add yourself as a tester', 'App roles › Roles: add your own account as an administrator or tester. For Instagram Login, also add the '
                  'Instagram account under Instagram testers and accept the invitation in the Instagram app (Settings › Apps and websites › Tester invites).',
-                 primary='Done, next', skip_if=token_path),
+                 primary='Done, next', skip_if=token_path, demo='roles'),
             Step('signin', 'Sign in', 'The browser opens Meta\'s sign-in. Approve it there, then come back here. This screen moves on by itself.',
                  build=signin_control, primary='Sign in in the browser', on_next=self.sign_in, skip_if=lambda: self.use_token, enter=lambda: self.signin_status.setText('')),
             Step('token', 'Paste the access token', 'A Meta Business Suite system-user token (never expires), or a Graph API Explorer token with '
@@ -647,11 +650,11 @@ class SetupFlow(QDialog):
             Step('cloud_signup', 'Create a free Cloudinary account', 'Instagram fetches each photo from a link, so PostQueue needs somewhere to host it for a moment. '
                  'Cloudinary\'s free plan is far more than a personal queue needs.', build=open_cloudinary_control, primary='I have an account, next', skip_if=own_hosting),
             Step('cloud_name', 'Paste the Cloud name', 'Cloudinary console › Settings › API Keys (or the dashboard\'s Product environment credentials).',
-                 build=lambda: self.field('cloud_edit', 'Cloud name', text=s.get('cloudinary_cloud', '')), ready=lambda: bool(self.cloud_edit.text().strip()), on_next=lambda: self.save_hosting(), skip_if=own_hosting),
+                 build=lambda: self.field('cloud_edit', 'Cloud name', text=s.get('cloudinary_cloud', '')), ready=lambda: bool(self.cloud_edit.text().strip()), on_next=lambda: self.save_hosting(), skip_if=own_hosting, demo='cloud_name'),
             Step('api_key', 'Paste the API key', 'From the same Cloudinary page.',
-                 build=lambda: self.field('ckey_edit', 'API key', text=s.get('cloudinary_api_key', '')), ready=lambda: bool(self.ckey_edit.text().strip()), on_next=lambda: self.save_hosting(), skip_if=own_hosting),
+                 build=lambda: self.field('ckey_edit', 'API key', text=s.get('cloudinary_api_key', '')), ready=lambda: bool(self.ckey_edit.text().strip()), on_next=lambda: self.save_hosting(), skip_if=own_hosting, demo='api_key'),
             Step('api_secret', 'Paste the API secret', 'From the same Cloudinary page (click to reveal it).',
-                 build=lambda: self.field('csecret_edit', 'API secret', password=True, text=s.get('cloudinary_api_secret', '')), ready=lambda: bool(self.csecret_edit.text().strip()), on_next=lambda: self.save_hosting(), skip_if=own_hosting),
+                 build=lambda: self.field('csecret_edit', 'API secret', password=True, text=s.get('cloudinary_api_secret', '')), ready=lambda: bool(self.csecret_edit.text().strip()), on_next=lambda: self.save_hosting(), skip_if=own_hosting, demo='api_secret'),
             Step('test_hosting', 'Test the hosting', 'PostQueue uploads a tiny test image and removes it again. This screen moves on when it works.',
                  build=test_control, primary='Test hosting', on_next=self.test_hosting, skippable=True, enter=lambda: self.hosting_status.setText(''), skip_if=own_hosting),
             Step('time', 'When do you usually post?', 'Each photo you add is scheduled for the next free day at this time. You can change any of them.',
@@ -681,6 +684,11 @@ class SetupFlow(QDialog):
 
     def refresh_ready(self, *_):
         step = self.step(); self.primary.setEnabled(self.task is None and (step.ready() if step.ready else True))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event); short = self.height() < 700
+        for hint in self.findChildren(QLabel, 'hint'):
+            if hint.property('with_demo'): hint.setVisible(not short)
 
     def next(self):
         step = self.step()

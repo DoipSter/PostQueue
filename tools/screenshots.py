@@ -77,14 +77,15 @@ def main(out):
     window.when_edit.calendar.setSelectedDate(window.when_edit.date); window.when_edit.calendar.resize(420, 340); window.when_edit.calendar.grab().save(str(out / 'guide-calendar.png'))
     # The setup flow, one screen at a time
     fresh = cfg.Settings(data / 'fresh.json'); flow = ui.SetupFlow(fresh, window); flow.setAttribute(Qt.WA_DontShowOnScreen, True); flow.show(); app.processEvents()
+    for panel in flow.findChildren(ui.DemoPanel): panel.settle()   # the pointer on its target, not mid-flight
     def shoot(name, items=()):
         app.processEvents(); shot = flow.grab(); shot.save(str(out / f'setup-{name}.png')); annotate(flow, shot, items, out / f'guide-setup-{name}.png')
     shoot('welcome', [(flow.primary, 1)]); flow.next()
     shoot('professional', [(flow.primary, 1)]); flow.next()
     shoot('login', [(flow.step().page.findChildren(ui.QPushButton)[0], 1), (flow.step().page.findChildren(ui.QPushButton)[1], 2), (flow.step().page.findChildren(ui.QPushButton)[2], 3)])
     flow.choose_login('facebook'); shoot('create-app', [(flow.step().page.findChildren(ui.QPushButton)[0], 1), (flow.primary, 2)]); flow.next()
-    flow.app_id_edit.setText('1234567890'); shoot('app-id', [(flow.app_id_edit, 1), (flow.primary, 2)]); flow.next()
-    flow.app_secret_edit.setText('secret'); shoot('app-secret', [(flow.app_secret_edit, 1), (flow.primary, 2), (flow.skip_button, 3)]); flow.next()
+    flow.app_id_edit.setText('1234567890'); shoot('app-id', [(flow.app_id_edit, 1), (flow.primary, 2)]); flow.save_app(); flow.advance()   # advance: Next would ask Meta
+    flow.app_secret_edit.setText('secret'); shoot('app-secret', [(flow.app_secret_edit, 1), (flow.primary, 2), (flow.skip_button, 3)]); flow.save_app(); flow.advance()
     shoot('redirect', [(flow.step().page.findChildren(ui.QLineEdit)[0], 1), (flow.step().page.findChildren(ui.QPushButton)[0], 2), (flow.primary, 3)]); flow.next()
     shoot('roles', [(flow.primary, 1)]); flow.next()
     shoot('sign-in', [(flow.primary, 1), (flow.step().page.findChildren(ui.QPushButton)[1], 2)])

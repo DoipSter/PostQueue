@@ -26,7 +26,7 @@ If you close the steps early, the yellow bar at the top of the window says what 
 
 ![Use a professional account](screenshots/guide-simple-professional.png)
 
-Instagram only allows posting through its API for **Business** or **Creator** accounts. In the Instagram app: Settings › Account type and tools › Switch to professional account. It is free and can be switched back. For Facebook Login, the account also needs a linked Facebook Page: Instagram › Settings › Business tools and controls › Connect a Facebook Page (create a Page if you have none). Press **Done, next** (1).
+Instagram only allows posting through its API for **Business** or **Creator** accounts. In the Instagram app: Settings › Account type and tools › Switch to professional account. It is free and can be switched back. The screen plays a short demo of the Instagram app with the pointer moving to each thing to tap; it replays until you move on, and a click on it skips ahead. For Facebook Login, the account also needs a linked Facebook Page: Instagram › Settings › Business tools and controls › Connect a Facebook Page (create a Page if you have none). Press **Done, next** (1).
 
 ### 2.2 Sign in
 
@@ -83,11 +83,11 @@ Pick one:
 
 ### 3.2 The Meta app (five short screens)
 
-A Meta app is a free registration that lets PostQueue post as you. The screens take you through it one value at a time.
+A Meta app is a free registration that lets PostQueue post as you. The screens take you through it one value at a time, and each one plays a looping demo of the Meta page it is talking about: a drawing of the page with the pointer moving to the button or menu to click, a click ripple, and a caption ("2 of 5 · My Apps"). It replays until you move on; a click on the demo skips to its next frame.
 
 ![Create a Meta app](screenshots/guide-setup-create-app.png)
 
-Press **Open developers.facebook.com** (1). Use **Log In** at the top right with your Facebook account (the page says "not found" if you go straight to the apps list while logged out), then open **My Apps**, click **Create app**, choose the **Business** type (or the "Instagram" use case when offered) and add the **Instagram** product. Keep the app in development mode. Then press **I created it, next** (2).
+Press **Open developers.facebook.com** (1). Use **Log In** at the top right with your Facebook account (the page says "not found" if you go straight to the apps list while logged out), then open **My Apps**, click **Create app**, choose the **Business** type (or the "Instagram" use case when offered) and add the **Instagram** product, exactly as the demo on the screen shows, frame by frame. Keep the app in development mode. Then press **I created it, next** (2).
 
 ![Paste the App ID](screenshots/guide-setup-app-id.png)
 
@@ -117,7 +117,7 @@ If the browser ends on an error page, press **The browser ended on an error page
 
 ![Create a Cloudinary account](screenshots/guide-setup-cloudinary.png)
 
-Instagram fetches each photo **from a link**, so PostQueue needs somewhere to host it for a moment. Press **Open cloudinary.com** (1) and create a free account (the free plan is far more than a personal queue needs). Then press **I have an account, next** (2).
+Instagram fetches each photo **from a link**, so PostQueue needs somewhere to host it for a moment. Press **Open cloudinary.com** (1) and create a free account (the free plan is far more than a personal queue needs). Then press **I have an account, next** (2). The next three screens each play a demo of the Cloudinary console page where the value lives (Settings › API Keys), with the pointer on the field to copy.
 
 ![Paste the Cloud name](screenshots/guide-setup-cloud-name.png)
 

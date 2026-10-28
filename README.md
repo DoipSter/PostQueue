@@ -26,6 +26,7 @@ One-time setup, once `branding.py` names your Meta app and the deployed PostQueu
 |---|---|
 | `PostQueue.pyw`, `app.py` | Entry point and the Qt interface (queue, details pane, tray icon, first-run wizard, settings dialog, scheduler timer) |
 | `engine.py` | The queue (`posts.json` and media copies), timing rules, photo preparation, publishing steps and retries |
+| `demo.py` | The looping "show me" demos on the setup screens: drawings of the Meta, Instagram and Cloudinary pages with the pointer moving to what to click |
 | `instagram.py` | Graph API client (Facebook Login and Instagram Login hosts), token exchange, browser sign-in receiver |
 | `hosting.py` | Media hosting: the PostQueue service, or Cloudinary uploads (signed, chunked for large videos), and removal |
 | `branding.py`, `service\` | The built-in Meta app ID and service address, and the service itself (Cloudflare Worker: token exchange, temporary media hosting, hourly cleanup, the public privacy and data deletion pages) |

@@ -444,3 +444,31 @@ def test_close_to_tray_hides_or_quits(window, qapp):
     quits = []; qapp.quit = lambda: quits.append(1)
     window.close(); assert quits and isinstance(window.settings['window'], list)
     del qapp.quit
+
+
+def test_setup_demos_replay_and_point_at_real_targets(window, qapp):
+    """Every demo frame points at an element its page really draws, the panels replay on their own, and a click skips ahead."""
+    import demo
+    from PySide6.QtGui import QPainter, QPixmap
+    for key, frames in demo.SCENES.items():
+        for caption, page, target in frames:
+            pm = QPixmap(1, 1); painter = QPainter(pm); pg = demo.Page(painter, 'Segoe UI'); pg.draw(page); painter.end()
+            assert target in pg.rects, f'{key}: "{caption}" points at {target}, which the page does not draw'
+    s = fresh_settings(window); flow = ui.SetupFlow(s, window); flow.show(); qapp.processEvents()
+    with_demo = {st.key for st in flow.steps if st.demo}
+    assert with_demo == {'professional', 'create_app', 'app_id', 'app_secret', 'redirect', 'roles', 'cloud_name', 'api_key', 'api_secret'}
+    flow.goto('create_app'); qapp.processEvents()
+    panel = flow.step().page.findChild(demo.DemoPanel); assert panel.isVisible() and panel.timer.isActive() and len(panel.frames) == 5
+    panel.tick(demo.FRAME_MS); assert panel.index == 1                       # the next frame after one frame's time
+    for _ in range(4): panel.tick(demo.FRAME_MS + demo.LAST_EXTRA_MS)
+    assert panel.index == 0                                                   # and round again
+    for i in range(len(panel.frames)):
+        panel.show_frame(i); panel.elapsed = int(demo.FRAME_MS * 0.5); assert not panel.grab().isNull()   # every frame paints, mid-click
+    panel.show_frame(0); panel.mousePressEvent(None); assert panel.index == 1   # a click skips ahead
+    flow.goto('app_id'); qapp.processEvents(); assert not panel.timer.isActive()   # hidden pages stop replaying
+    assert flow.step().page.findChild(demo.DemoPanel).timer.isActive()
+    flow.resize(760, 600); qapp.processEvents()
+    flow.goto('app_secret'); qapp.processEvents()
+    assert not flow.step().page.findChild(ui.QLabel, 'hint').isVisible()      # short window: the demo wins over the hint
+    flow.resize(940, 720); qapp.processEvents(); assert flow.step().page.findChild(ui.QLabel, 'hint').isVisible()
+    flow.reject()

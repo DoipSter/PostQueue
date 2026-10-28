@@ -16,7 +16,7 @@ Every screen the user sees, in order, with what to do on each. The pictures are 
 
 ![Professional account](03-setup-professional-account.png)
 
-**1** Make sure the Instagram account is a professional one (Instagram app › Settings › Account type and tools › Switch to professional account), then press **Done, next**.
+**1** Make sure the Instagram account is a professional one (Instagram app › Settings › Account type and tools › Switch to professional account), then press **Done, next**. The drawing of the phone is a demo that plays on its own: the pointer moves to each thing to tap, and the caption under it says which step it is on.
 
 ![Sign in](04-setup-sign-in.png)
 

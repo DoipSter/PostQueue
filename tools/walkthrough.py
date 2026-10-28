@@ -34,6 +34,7 @@ def main(out):
     window.refresh(); shot('first-launch', window, [(window.banner_button, 1)])
     # 2-7. Setup, one screen at a time
     flow = ui.SetupFlow(settings, window); flow.setAttribute(Qt.WA_DontShowOnScreen, True); flow.show(); app.processEvents()
+    for panel in flow.findChildren(ui.DemoPanel): panel.settle()   # the pointer on its target, not mid-flight
     shot('setup-welcome', flow, [(flow.primary, 1)]); flow.next()
     shot('setup-professional-account', flow, [(flow.primary, 1)]); flow.next()
     shot('setup-sign-in', flow, [(flow.primary, 1)])
