@@ -162,6 +162,52 @@ def accounts_for_token(token, version=DEFAULT_VERSION):
     raise fb_error or InstagramError('No Instagram professional account was found for this token.')
 
 
+# --- Checking a Meta app as the user sets it up ------------------------------------------------------------------
+def app_info(app_id, version=DEFAULT_VERSION):
+    """The app's name, read without any token. Returns None when Meta will not say (apps in development mode are
+    private to this lookup) and raises InstagramError when the ID is plainly wrong."""
+    app_id = app_id.strip()
+    if not app_id.isdigit(): raise InstagramError('A Meta App ID is a number (App settings › Basic › App ID).')
+    try: return request('GET', f'https://{FB_HOST}/{version}/{app_id}', {'fields': 'id,name'})
+    except InstagramError as exc:
+        if exc.code == 104: return None   # "an access token is required": the app exists but is not public, or the ID is unknown
+        raise
+
+
+def app_token(app_id, app_secret, version=DEFAULT_VERSION):
+    """An app access token from the ID and secret: the proof that the pair is right. Raises InstagramError
+    with a plain message when the ID or the secret is wrong."""
+    try:
+        r = request('GET', f'https://{FB_HOST}/{version}/oauth/access_token',
+                    {'client_id': app_id.strip(), 'client_secret': app_secret.strip(), 'grant_type': 'client_credentials'})
+    except InstagramError as exc:
+        text = str(exc).lower()
+        if 'client id' in text or exc.code == 101: raise InstagramError('Meta does not know this App ID. Check App settings › Basic › App ID.', code=101)
+        if 'secret' in text: raise InstagramError('The App secret does not match this App ID. Copy it again from App settings › Basic (click Show).', code=exc.code)
+        raise
+    return r['access_token']
+
+
+SIGNIN_HINTS = (
+    ('redirect', f'The sign-in came back to an address the app does not allow. In the Meta app dashboard, open Facebook Login › Settings '
+                 f'(or Instagram › Business login settings) and add http://localhost:{LOGIN_PORT}/ to Valid OAuth Redirect URIs.'),
+    ('not active', 'The app is in development mode and this account is not on it. In the dashboard, App roles › Roles: add your account '
+                   'as an administrator or tester (and for Instagram Login, under Instagram testers), then accept the invitation.'),
+    ('development mode', 'The app is in development mode and this account is not on it. In the dashboard, App roles › Roles: add your account '
+                         'as an administrator or tester, then accept the invitation.'),
+    ('invalid scopes', 'The app is missing a permission. In the dashboard, add the Instagram product (and Facebook Login) to the app.'),
+    ('access_denied', 'The sign-in was cancelled in the browser. Press Sign in again and approve it.'),
+)
+
+
+def signin_hint(message):
+    """Meta's sign-in errors, turned into the thing to fix."""
+    text = (message or '').lower()
+    for key, hint in SIGNIN_HINTS:
+        if key in text: return hint
+    return message or 'The sign-in did not complete.'
+
+
 # --- Sign-in -----------------------------------------------------------------------------------------------------
 def authorize_url(kind, app_id, redirect, state, version=DEFAULT_VERSION):
     if kind == 'instagram':
@@ -270,7 +316,7 @@ def run_login(kind, app_id, app_secret='', version=DEFAULT_VERSION, opener=webbr
     finally:
         server.close()
     if result.get('state') != state: raise InstagramError('The sign-in reply did not belong to this request. Try again.')
-    if 'error' in result: raise InstagramError(result.get('error_description') or result.get('error_reason') or result['error'])
+    if 'error' in result: raise InstagramError(signin_hint(result.get('error_description') or result.get('error_reason') or result['error']))
     if service_url:
         token, expires = service_exchange(service_url, kind, token=result.get('access_token'), code=result.get('code', '').split('#')[0] or None, redirect=server.redirect)
         return token, (int(expires) if expires else None), server.redirect

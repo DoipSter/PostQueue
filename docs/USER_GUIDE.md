@@ -87,15 +87,15 @@ A Meta app is a free registration that lets PostQueue post as you. The screens t
 
 ![Create a Meta app](screenshots/guide-setup-create-app.png)
 
-Press **Open developers.facebook.com/apps** (1), sign in with your Facebook account, click **Create app**, choose the **Business** type (or the "Instagram" use case when offered) and add the **Instagram** product. Keep the app in development mode. Then press **I created it, next** (2).
+Press **Open developers.facebook.com** (1). Use **Log In** at the top right with your Facebook account (the page says "not found" if you go straight to the apps list while logged out), then open **My Apps**, click **Create app**, choose the **Business** type (or the "Instagram" use case when offered) and add the **Instagram** product. Keep the app in development mode. Then press **I created it, next** (2).
 
 ![Paste the App ID](screenshots/guide-setup-app-id.png)
 
-In the app dashboard: **App settings › Basic**. Copy the **App ID** into the box (1) and press **Next** (2). Next only lights up once something is in the box.
+In the app dashboard: **App settings › Basic**. Copy the **App ID** into the box (1) and press **Next** (2). Next only lights up once something is in the box, and PostQueue then checks the ID with Meta: a public app shows its name; an app still in development mode is private to that lookup and is confirmed on the next screen together with the secret.
 
 ![Paste the App secret](screenshots/guide-setup-app-secret.png)
 
-Same page: **App secret** (click Show). Paste it (1) and press **Next** (2). With the secret, the sign-in lasts 60 days and renews. For Facebook Login you may **Skip this** (3), but the sign-in then lasts about two hours. Instagram Login always needs it.
+Same page: **App secret** (click Show). Paste it (1) and press **Next** (2). PostQueue proves the ID and secret belong together before moving on, and says so if they don't. With the secret, the sign-in lasts 60 days and renews. For Facebook Login you may **Skip this** (3), but the sign-in then lasts about two hours. Instagram Login always needs it.
 
 ![Let the sign-in come back](screenshots/guide-setup-redirect.png)
 

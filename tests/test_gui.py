@@ -261,9 +261,13 @@ def test_setup_flow_one_thing_per_screen(window, qapp, monkeypatch):
     flow.next(); at('login_kind'); assert not flow.primary.isVisible()   # the two big choices are the only buttons
     flow.choose_login('facebook'); at('create_app'); assert s['login_kind'] == 'facebook'
     flow.next(); at('app_id'); assert not flow.primary.isEnabled()        # one field, Next off until it has a value
-    flow.app_id_edit.setText(' 123 '); assert flow.primary.isEnabled(); flow.next(); at('app_secret'); assert s['app_id'] == '123'
+    monkeypatch.setattr(ui.ig, 'app_info', lambda app_id, version=None: {'id': '123', 'name': 'Shop App'})
+    monkeypatch.setattr(ui.ig, 'app_token', lambda app_id, secret, version=None: '123|tok')
+    flow.app_id_edit.setText(' 123 '); assert flow.primary.isEnabled(); flow.next()
+    assert wait_until(lambda: flow.step().key == 'app_secret') and s['app_id'] == '123' and 'Found: Shop App' in flow.app_id_status.text()
     assert flow.primary.isEnabled() and flow.skip_button.isVisible()        # optional for Facebook Login
-    flow.app_secret_edit.setText('sec'); flow.next(); at('redirect'); assert s['app_secret'] == 'sec'
+    flow.app_secret_edit.setText('sec'); flow.next()
+    assert wait_until(lambda: flow.step().key == 'redirect') and s['app_secret'] == 'sec' and 'match' in flow.secret_status.text()
     flow.next(); at('roles'); flow.next(); at('signin'); assert flow.primary.text() == 'Sign in in the browser'
     flow.next()                                                               # starts the sign-in; the screen moves on by itself
     assert wait_until(lambda: flow.step().key == 'cloud_signup') and s.connected() and s['ig_username'] == 'wiz'   # one account: the chooser is skipped
@@ -277,6 +281,22 @@ def test_setup_flow_one_thing_per_screen(window, qapp, monkeypatch):
     again = cfg.Settings(s.path)
     assert again['setup_done'] and again['default_hour'] == 18 and again['default_minute'] == 30 and again['start_with_windows'] is True and again.ready()
     window.refresh(); assert not window.needs_setup() and not window.banner.isVisible()
+
+
+def test_setup_flow_checks_the_app_id_and_secret(window, qapp, monkeypatch):
+    s = fresh_settings(window)
+    flow = ui.SetupFlow(s, window); flow.show(); qapp.processEvents()
+    flow.goto('app_id')
+    monkeypatch.setattr(ui.ig, 'app_info', lambda app_id, version=None: None)        # an app in development mode: not visible publicly
+    flow.app_id_edit.setText('777'); flow.next()
+    assert wait_until(lambda: flow.step().key == 'app_secret') and 'development mode' in flow.app_id_status.text()
+    monkeypatch.setattr(ui.ig, 'app_token', lambda app_id, secret, version=None: (_ for _ in ()).throw(ui.ig.InstagramError('The App secret does not match this App ID. Copy it again.')))
+    flow.app_secret_edit.setText('wrong'); flow.next()
+    assert wait_until(lambda: flow.task is None and 'does not match' in flow.secret_status.text()) and flow.step().key == 'app_secret'   # stays put
+    flow.app_secret_edit.clear(); flow.next(); assert flow.step().key == 'redirect'   # Facebook Login may go on without a secret
+    monkeypatch.setattr(ui.ig, 'app_info', lambda app_id, version=None: (_ for _ in ()).throw(ui.ig.InstagramError('A Meta App ID is a number (App settings › Basic › App ID).')))
+    flow.goto('app_id'); flow.app_id_edit.setText('abc'); flow.next()
+    assert wait_until(lambda: flow.task is None and 'is a number' in flow.app_id_status.text()) and flow.step().key == 'app_id'
 
 
 def test_setup_flow_token_shortcut_and_account_choice(window, qapp, monkeypatch):

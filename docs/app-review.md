@@ -12,7 +12,7 @@ Public addresses used below. The PostQueue service serves them, so they are live
 
 ## 1. Before submitting
 
-Do these in the [App Dashboard](https://developers.facebook.com/apps/) first. Review requests with gaps here get sent back without being read.
+Do these in the App Dashboard first (log in at <https://developers.facebook.com/>, then My Apps; the apps list shows "not found" while logged out). Review requests with gaps here get sent back without being read.
 
 - [ ] **App settings › Basic:** display name `PostQueue`, an app icon (1024 × 1024 PNG; the logo in `make_assets.py` scales up), category `Business and pages`, a contact email you read, the privacy policy URL and the data deletion URL above. Save.
 - [ ] **Facebook Login › Settings:** `http://localhost:48215/` under Valid OAuth Redirect URIs. Client OAuth login and Web OAuth login on; everything else off.

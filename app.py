@@ -183,7 +183,7 @@ class InstagramPanel(QWidget):
         super().__init__(parent); self.settings = settings; self.task = None; self.cancelled = False
         layout = QVBoxLayout(self); layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(intro_label('Posts go through Meta\'s official Instagram API. It needs an <b>Instagram professional account</b> (Business or Creator) '
-                                     'and a <b>Meta app</b> you create once at <a href="https://developers.facebook.com/apps/">developers.facebook.com/apps</a>. '
+                                     'and a <b>Meta app</b> you create once at <a href="https://developers.facebook.com/">developers.facebook.com</a> (log in, then My Apps). '
                                      'The user guide walks through it.'))
         group = QGroupBox('Sign in with the browser'); form = QFormLayout(group); layout.addWidget(group)
         self.kind = QComboBox(); self.kind.addItem('Facebook Login (Instagram account linked to a Facebook Page)', 'facebook'); self.kind.addItem('Instagram Login (Instagram account only)', 'instagram')
@@ -566,7 +566,7 @@ class SetupFlow(QDialog):
 
         def open_meta_control():
             box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0)
-            col.addWidget(self.choice('Open developers.facebook.com/apps', lambda: self.open_url('https://developers.facebook.com/apps/'))); return box
+            col.addWidget(self.choice('Open developers.facebook.com', lambda: self.open_url('https://developers.facebook.com/'))); return box
 
         def redirect_control():
             box = QWidget(); row = QHBoxLayout(box); row.setContentsMargins(0, 0, 0, 0)
@@ -620,16 +620,18 @@ class SetupFlow(QDialog):
                  primary='Done, next'),
             Step('login_kind', 'How will you sign in?', 'Both work. Facebook Login needs the account linked to a Facebook Page '
                  '(Instagram › Settings › Business tools › Connect a Facebook Page).', build=login_kind_control, primary=None, skip_if=lambda: not self.advanced),
-            Step('create_app', 'Create a Meta app', 'Sign in with your Facebook account, click Create app, choose the Business type (or the Instagram use case), '
-                 'and add the Instagram product. Keep the app in development mode.', build=open_meta_control, primary='I created it, next', skip_if=token_path),
-            Step('app_id', 'Paste the App ID', 'In the app dashboard: App settings › Basic › App ID.',
-                 build=lambda: self.field('app_id_edit', 'App ID', text=s.get('app_id', '')), ready=lambda: bool(self.app_id_edit.text().strip()),
-                 on_next=lambda: self.save_app(), skip_if=token_path),
-            Step('app_secret', 'Paste the App secret', 'App settings › Basic › App secret (click Show).',
+            Step('create_app', 'Create a Meta app', 'On the developer site, use Log In (top right) with your Facebook account, open My Apps, click Create app, '
+                 'choose the Business type (or the Instagram use case), and add the Instagram product. Keep the app in development mode.',
+                 hint='Going straight to the apps list while logged out shows "page not found"; log in first.',
+                 build=open_meta_control, primary='I created it, next', skip_if=token_path),
+            Step('app_id', 'Paste the App ID', 'In the app dashboard: App settings › Basic › App ID. PostQueue checks it with Meta when you press Next.',
+                 build=lambda: self.checked_field('app_id_edit', 'App ID', 'app_id_status', text=s.get('app_id', '')), ready=lambda: bool(self.app_id_edit.text().strip()),
+                 on_next=self.check_app_id, skip_if=token_path, enter=lambda: self.app_id_status.setText('')),
+            Step('app_secret', 'Paste the App secret', 'App settings › Basic › App secret (click Show). PostQueue proves the ID and secret match before moving on.',
                  hint='With the secret, the sign-in lasts 60 days. Instagram Login always needs it; a Facebook sign-in without it lasts about two hours.',
-                 build=lambda: self.field('app_secret_edit', 'App secret', password=True, text=s.get('app_secret', '')),
-                 ready=lambda: bool(self.app_secret_edit.text().strip()) or s.get('login_kind') == 'facebook', on_next=lambda: self.save_app(),
-                 skip_if=token_path, skippable=True),
+                 build=lambda: self.checked_field('app_secret_edit', 'App secret', 'secret_status', password=True, text=s.get('app_secret', '')),
+                 ready=lambda: bool(self.app_secret_edit.text().strip()) or s.get('login_kind') == 'facebook', on_next=self.check_secret,
+                 skip_if=token_path, skippable=True, enter=lambda: self.secret_status.setText('')),
             Step('redirect', 'Let the sign-in come back to PostQueue', 'In the app dashboard, open Facebook Login › Settings (or Instagram › Business login settings) '
                  'and add this address to Valid OAuth Redirect URIs:', build=redirect_control, primary='Added, next', skip_if=token_path),
             Step('roles', 'Add yourself as a tester', 'App roles › Roles: add your own account as an administrator or tester. For Instagram Login, also add the '
@@ -701,6 +703,30 @@ class SetupFlow(QDialog):
         if self.history: self.show_step(self.history.pop())
 
     # --- choices and actions --------------------------------------------------------------------------------------
+    def checked_field(self, name, placeholder, status_name, password=False, text=''):
+        """A single field with a line under it for the result of the check that runs when Next is pressed."""
+        box = QWidget(); col = QVBoxLayout(box); col.setContentsMargins(0, 0, 0, 0); col.setSpacing(10)
+        col.addWidget(self.field(name, placeholder, password=password, text=text)); col.addWidget(self.status_label(status_name)); return box
+
+    def check_app_id(self):
+        """Look the App ID up at Meta: a public app shows its name; an app in development mode cannot be seen this way and is
+        confirmed on the next screen together with the secret."""
+        self.save_app(); app_id, version = self.settings['app_id'], self.settings.get('api_version')
+        def done(info):
+            self.app_id_status.setText(f'Found: {info["name"]}.' if info else 'Meta keeps apps in development mode private, so this ID is confirmed on the next screen with the secret.')
+            QTimer.singleShot(900 if info else 1600, self.advance)
+        self.run_task(lambda: ig.app_info(app_id, version), done, self.app_id_status, 'Checking with Meta…')
+        return False
+
+    def check_secret(self):
+        """Prove the ID and secret belong together by asking Meta for an app token. Without a secret (Facebook Login), move on."""
+        self.save_app(); app_id, secret, version = self.settings['app_id'], self.settings['app_secret'], self.settings.get('api_version')
+        if not secret: return True
+        def done(token):
+            self.secret_status.setText('The App ID and secret match.'); QTimer.singleShot(700, self.advance)
+        self.run_task(lambda: ig.app_token(app_id, secret, version), done, self.secret_status, 'Checking the ID and secret with Meta…')
+        return False
+
     def choose_login(self, kind): self.use_token = False; self.settings['login_kind'] = kind; self.settings.save(); self.advance()
     def choose_token(self): self.use_token = True; self.goto('token')
 

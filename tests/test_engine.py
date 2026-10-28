@@ -661,6 +661,26 @@ def test_accounts_for_token_falls_back_to_instagram_login(monkeypatch):
     with pytest.raises(ig.InstagramError, match='not valid'): ig.accounts_for_token('t')
 
 
+def test_app_checks_and_signin_hints(monkeypatch):
+    def fake(method, url, params=None):
+        if url.endswith('/123'): return {'id': '123', 'name': 'My Shop App'}
+        if url.endswith('/456'): raise ig.InstagramError('An access token is required to request this resource.', code=104)
+        if 'client_credentials' in str(params):
+            if params['client_id'] != '123': raise ig.InstagramError('Invalid Client ID', code=101)
+            if params['client_secret'] != 'good': raise ig.InstagramError('Error validating client secret.', code=1)
+            return {'access_token': '123|apptoken'}
+        raise AssertionError(url)
+    monkeypatch.setattr(ig, 'request', fake)
+    assert ig.app_info('123')['name'] == 'My Shop App' and ig.app_info(' 456 ') is None
+    with pytest.raises(ig.InstagramError, match='is a number'): ig.app_info('abc')
+    assert ig.app_token('123', 'good') == '123|apptoken'
+    with pytest.raises(ig.InstagramError, match='does not know this App ID'): ig.app_token('999', 'good')
+    with pytest.raises(ig.InstagramError, match='secret does not match'): ig.app_token('123', 'bad')
+    assert 'Valid OAuth Redirect URIs' in ig.signin_hint("Can't load URL: the domain of this URL isn't included in the app's domains. redirect_uri")
+    assert 'App roles' in ig.signin_hint('App not active: This app is not accessible right now')
+    assert 'cancelled' in ig.signin_hint('access_denied') and ig.signin_hint('Something odd') == 'Something odd'
+
+
 def test_authorize_urls_and_exchanges(monkeypatch):
     fb = ig.authorize_url('facebook', '123', 'http://localhost:48215/', 'st')
     assert fb.startswith('https://www.facebook.com/v25.0/dialog/oauth?') and 'response_type=token' in fb and 'instagram_content_publish' in fb

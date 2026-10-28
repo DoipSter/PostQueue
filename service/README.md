@@ -27,7 +27,7 @@ To check it: open the address in a browser; it answers `{"service":"PostQueue","
 
 ## The Meta app that goes with it
 
-Create the app once at <https://developers.facebook.com/apps/> (Business type, add the Instagram product and Facebook Login). Then:
+Create the app once at <https://developers.facebook.com/> (log in first, then My Apps › Create app; the `/apps/` address shows "not found" while logged out). Business type, add the Instagram product and Facebook Login. Then:
 
 - **Valid OAuth Redirect URIs:** add `http://localhost:48215/`.
 - **App roles:** while the app is in development mode, only people listed under Roles (and Instagram testers) can sign in. That is enough to use PostQueue yourself and with a few testers.

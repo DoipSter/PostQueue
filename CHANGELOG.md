@@ -12,6 +12,7 @@ More kinds of posts, and less typing.
 - **Add from a sheet:** a CSV with the columns `file`, `date`, `time`, `caption`, `first_comment`, `alt_text`, `target` adds a whole plan at once; `file` may hold several paths separated by `|` for a carousel, and paths are relative to the sheet. Rows that cannot be added are listed, the rest go in.
 - **New versions:** on start, PostQueue checks the Releases page once and shows a blue strip with a Download button when a newer version exists (Settings › General turns it off).
 - **Sign-in asks only for the permissions App Review covers.**
+- **Setup checks as you go (advanced path):** the App ID is looked up at Meta when you paste it (public apps show their name; apps in development mode are confirmed on the next screen), the App secret is proved against the ID before moving on, and a failed sign-in says exactly what to fix (the redirect address, or adding yourself as a tester). The developer site now opens at its front page, since its apps list shows "not found" while logged out.
 
 ## 1.0.0
 
