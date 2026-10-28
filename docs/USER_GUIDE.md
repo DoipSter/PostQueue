@@ -18,7 +18,7 @@ The first time PostQueue opens, it walks you through setup **one screen at a tim
 
 **Press Start** (1). (**Advanced** (2) is for people who want to use their own Meta app and hosting account; see section 3.)
 
-If you close the steps early, the yellow bar at the top of the window says what is still missing, and its button (1) takes you back to them:
+The window appears only once the screens are finished; closing them early quits PostQueue, and the next start begins with the setup again. If setup ever becomes incomplete later (after signing out, say), the yellow bar at the top of the window says what is still missing, and its button (1) takes you back to the screens:
 
 ![The window with the setup bar](screenshots/guide-banner.png)
 
@@ -63,7 +63,7 @@ This is the path PostQueue takes when it was built without a built-in Meta app a
 
 **Press Start** (1).
 
-If you close the steps early, the yellow bar at the top of the window says what is still missing, and its button (1) takes you back to them:
+The window appears only once the screens are finished; closing them early quits PostQueue, and the next start begins with the setup again. If setup ever becomes incomplete later (after signing out, say), the yellow bar at the top of the window says what is still missing, and its button (1) takes you back to the screens:
 
 ![The window with the setup bar](screenshots/guide-banner.png)
 
